@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "scripts": {
     "dev": "npm run dev:all",
+    "start": "node server/server.js",
+    "build": "npm run build --prefix client",
+    "vercel-build": "npm run build",
     "server": "node server/server.js",
     "server:dev": "nodemon server/server.js",
     "client": "npm run dev --prefix client",
