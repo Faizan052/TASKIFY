@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "npm run dev:all",
     "start": "node server/server.js",
-    "build": "npm run build --prefix client",
+    "build": "echo \"Skipping client build on Railway (client built separately by Vercel)\"",
     "vercel-build": "npm run build",
     "server": "node server/server.js",
     "server:dev": "nodemon server/server.js",
