@@ -344,6 +344,12 @@ router.post('/hr', protect, adminOnly, asyncHandler(async (req, res) => {
 
     const user = await User.create({ name, email, password, role: 'hr' });
     if (user) {
+        try {
+            await sendWelcomeEmail(user.email, user.name, 'hr', password);
+        } catch (emailError) {
+            console.log('Welcome email failed but HR created:', emailError);
+        }
+
         res.status(201).json({ _id: user._id, name: user.name, email: user.email, role: user.role });
     } else {
         res.status(400);
@@ -367,9 +373,19 @@ router.put('/hr/:id', protect, adminOnly, asyncHandler(async (req, res) => {
 
     hr.name = req.body.name || hr.name;
     hr.email = req.body.email || hr.email;
-    if (req.body.password) hr.password = req.body.password;
+    const passwordProvided = !!(req.body.password);
+    if (passwordProvided) hr.password = req.body.password;
 
     const updated = await hr.save();
+
+    if (passwordProvided) {
+        try {
+            await sendNewPasswordEmail(updated.email, updated.name, req.body.password, 'admin');
+        } catch (emailError) {
+            console.log('Failed to send updated credentials email to HR:', emailError);
+        }
+    }
+
     res.json({ _id: updated._id, name: updated.name, email: updated.email });
 }));
 

@@ -74,9 +74,18 @@ const taskSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    category: {
+        type: String,
+        enum: ['website', 'mobile-app', 'desktop-app', 'testing', 'updation', 'design', 'api', 'database', 'other'],
+        default: 'other'
+    },
     deadline: {
         type: Date,
         required: true
+    },
+    aiAnalysis: {
+        type: mongoose.Schema.Types.Mixed,
+        default: null
     },
     status: {
         type: String,

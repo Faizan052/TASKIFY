@@ -8,7 +8,7 @@ const PasswordReset = require('../models/PasswordReset');
 const { protect } = require('../middleware/auth');
 const { roleRequired } = require('../middleware/roles');
 const { STATUS, STAGE, setTaskState, notifyUsers } = require('../utils/taskWorkflow');
-const { sendNewPasswordEmail } = require('../utils/emailService');
+const { sendNewPasswordEmail, sendWelcomeEmail } = require('../utils/emailService');
 
 const normalizeId = (value) => {
     if (value === undefined || value === null || value === '') {
@@ -34,6 +34,12 @@ router.post('/managers', protect, roleRequired('hr'), asyncHandler(async (req, r
 
     const user = await User.create({ name, email, password, role: 'manager' });
     if (user) {
+        try {
+            await sendWelcomeEmail(user.email, user.name, 'manager', password);
+        } catch (emailError) {
+            console.log('Welcome email failed but manager created:', emailError);
+        }
+
         res.status(201).json({ _id: user._id, name: user.name, email: user.email, role: user.role });
     } else {
         res.status(400);
@@ -57,9 +63,19 @@ router.put('/managers/:id', protect, roleRequired('hr'), asyncHandler(async (req
 
     manager.name = req.body.name || manager.name;
     manager.email = req.body.email || manager.email;
-    if (req.body.password) manager.password = req.body.password;
+    const passwordProvided = !!(req.body.password);
+    if (passwordProvided) manager.password = req.body.password;
 
     const updated = await manager.save();
+
+    if (passwordProvided) {
+        try {
+            await sendNewPasswordEmail(updated.email, updated.name, req.body.password, 'manager');
+        } catch (emailError) {
+            console.log('Failed to send updated credentials email to manager:', emailError);
+        }
+    }
+
     res.json({ _id: updated._id, name: updated.name, email: updated.email });
 }));
 

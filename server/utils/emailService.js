@@ -112,12 +112,14 @@ const sendOTPEmail = async (email, otp, userName = 'User') => {
     }
 };
 
-// Send Welcome Email
-const sendWelcomeEmail = async (email, userName, role) => {
+// Send Welcome Email (optionally include temporary password)
+const sendWelcomeEmail = async (email, userName, role, password = null) => {
     const transporter = createTransporter();
     
     if (!transporter) {
-        console.log(`\n📧 WELCOME EMAIL (Dev Mode) to ${email}\n`);
+        console.log(`\n📧 WELCOME EMAIL (Dev Mode) to ${email}`);
+        if (password) console.log(`Username: ${email}\nPassword: ${password}`);
+        console.log('\n');
         return { success: true };
     }
 
@@ -163,6 +165,15 @@ const sendWelcomeEmail = async (email, userName, role) => {
                             <p>We're thrilled to have you join TASKIFY as a <strong>${role.charAt(0).toUpperCase() + role.slice(1)}</strong>!</p>
                             <p>Your account has been successfully created and you're all set to start collaborating with your team.</p>
                         </div>
+
+                        ${password ? `
+                        <div style="background:white;border:2px solid #e6eefc;padding:20px;border-radius:8px;margin:20px 0;">
+                            <h3 style="margin:0 0 10px 0;">Account Credentials</h3>
+                            <p style="margin:0;">Username: <strong>${email}</strong></p>
+                            <p style="margin:5px 0 0 0;">Password: <strong style="word-break:break-all;">${password}</strong></p>
+                            <p style="margin:10px 0 0 0;font-size:13px;color:#6b7280;">Please change your password after first login for security.</p>
+                        </div>
+                        ` : ''}
 
                         <h3 style="color: #667eea;">🚀 What's Next?</h3>
                         <div style="margin: 20px 0;">

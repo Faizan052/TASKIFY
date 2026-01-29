@@ -5,8 +5,8 @@ const path = require('path');
 const cors = require('cors');
 const connectDB = require('./config/db');
 
-// Load env vars (explicit path so running from `server` folder finds the repo .env)
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
+// Load env vars
+dotenv.config();
 
 const app = express();
 

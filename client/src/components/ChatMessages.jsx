@@ -275,97 +275,93 @@ export default function ChatMessages({ onClose, onUnreadCountChange }) {
     return (
         <div style={{
             display: 'grid',
-            gridTemplateColumns: selectedContact ? '380px 1fr' : '1fr',
-            height: '100%',
+            gridTemplateColumns: selectedContact ? '360px 1fr' : '1fr',
+            height: 'calc(100vh - 140px)',
             width: '100%',
-            background: '#fff',
-            overflow: 'hidden'
+            background: 'var(--card)',
+            overflow: 'hidden',
+            borderRadius: 'var(--radius)',
+            boxShadow: 'var(--shadow)',
+            border: '1px solid var(--border)'
         }}>
             {/* People List - Always Visible */}
             <div style={{
                 display: 'flex',
                 flexDirection: 'column',
-                borderRight: selectedContact ? '1px solid #e5e7eb' : 'none',
-                background: 'linear-gradient(to bottom, #fafbfc, #f3f4f6)',
+                borderRight: selectedContact ? '1px solid var(--border)' : 'none',
+                background: 'var(--card)',
                 position: 'relative',
                 overflow: 'hidden'
             }}>
-                {/* Decorative background */}
-                <div style={{
-                    position: 'absolute',
-                    top: '-100px',
-                    right: '-100px',
-                    width: '300px',
-                    height: '300px',
-                    background: 'radial-gradient(circle, rgba(102, 126, 234, 0.08) 0%, transparent 70%)',
-                    pointerEvents: 'none'
-                }} />
                 
                 {/* Header */}
                 <div style={{
-                    padding: '24px',
-                    borderBottom: '1px solid #e5e7eb',
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    padding: '16px 20px',
+                    borderBottom: '1px solid var(--border)',
+                    background: 'var(--gradient-primary)',
                     position: 'relative',
-                    zIndex: 1
+                    zIndex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    minHeight: '70px'
                 }}>
                     <h3 style={{
-                        margin: '0 0 20px 0',
-                        fontSize: '24px',
-                        fontWeight: 800,
+                        margin: '0',
+                        fontSize: '20px',
+                        fontWeight: 700,
                         color: '#fff',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '10px',
-                        letterSpacing: '-0.5px'
+                        letterSpacing: '-0.3px'
                     }}>
-                        <span style={{fontSize: '28px'}}>💬</span>
+                        <span style={{fontSize: '24px'}}>💬</span>
                         Messages
                     </h3>
                     
-                    {/* Search */}
+                </div>
+
+                {/* Search Bar */}
+                <div style={{padding: '12px 16px', background: 'var(--card)', borderBottom: '1px solid var(--border)'}}>
                     <div style={{position: 'relative'}}>
                         <div style={{
                             position: 'absolute',
                             left: '14px',
                             top: '50%',
                             transform: 'translateY(-50%)',
-                            color: '#94a3b8',
-                            fontSize: '16px'
+                            color: 'var(--text-tertiary)',
+                            fontSize: '18px',
+                            zIndex: 1
                         }}>🔍</div>
                         <input
                             type="text"
-                            placeholder="Search people..."
+                            placeholder="Search messages..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             style={{
                                 width: '100%',
-                                padding: '12px 14px 12px 42px',
-                                border: '2px solid rgba(255,255,255,0.2)',
-                                borderRadius: '12px',
+                                padding: '10px 14px 10px 42px',
+                                border: '1px solid var(--border)',
+                                borderRadius: 'var(--radius)',
                                 fontSize: '14px',
                                 outline: 'none',
-                                transition: 'all 0.2s ease',
-                                background: 'rgba(255,255,255,0.15)',
-                                color: '#fff',
-                                backdropFilter: 'blur(10px)'
+                                transition: 'var(--transition)',
+                                background: 'var(--bg)',
+                                color: 'var(--text-primary)'
                             }}
                             onFocus={(e) => {
-                                e.target.style.background = 'rgba(255,255,255,0.25)'
-                                e.target.style.borderColor = 'rgba(255,255,255,0.4)'
+                                e.target.style.borderColor = 'var(--accent)'
+                                e.target.style.boxShadow = '0 0 0 3px rgba(102, 126, 234, 0.1)'
                             }}
                             onBlur={(e) => {
-                                e.target.style.background = 'rgba(255,255,255,0.15)'
-                                e.target.style.borderColor = 'rgba(255,255,255,0.2)'
+                                e.target.style.borderColor = 'var(--border)'
+                                e.target.style.boxShadow = 'none'
                             }}
                         />
-                        <style>{`
-                            input::placeholder {
-                                color: rgba(255,255,255,0.8);
-                            }
-                        `}</style>
                     </div>
                 </div>
+                <div style={{height: '1px', background: '#e9edef'}}></div>
 
                 {/* Error Message */}
                 {error && (
@@ -390,8 +386,9 @@ export default function ChatMessages({ onClose, onUnreadCountChange }) {
                     overflowY: 'auto',
                     overflowX: 'hidden',
                     position: 'relative',
-                    zIndex: 1
-                }}>
+                    zIndex: 1,
+                    height: 'calc(100vh - 280px)'
+                }} className="custom-scrollbar">
                     {allPeople.length === 0 ? (
                         <div style={{
                             textAlign: 'center',
@@ -432,29 +429,24 @@ export default function ChatMessages({ onClose, onUnreadCountChange }) {
                                     key={person._id}
                                     onClick={() => handleSelectContact(person)}
                                     style={{
-                                        padding: '14px 20px',
+                                        padding: '12px 16px',
                                         cursor: 'pointer',
-                                        transition: 'all 0.2s ease',
-                                        background: isActive 
-                                            ? 'linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%)' 
-                                            : 'transparent',
-                                        borderLeft: isActive ? '4px solid #667eea' : '4px solid transparent',
+                                        transition: 'var(--transition)',
+                                        background: isActive ? 'var(--surface-active)' : 'transparent',
+                                        borderBottom: '1px solid var(--border)',
                                         display: 'flex',
-                                        gap: '14px',
+                                        gap: '12px',
                                         alignItems: 'center',
-                                        position: 'relative',
-                                        overflow: 'hidden'
+                                        position: 'relative'
                                     }}
                                     onMouseEnter={(e) => {
                                         if (!isActive) {
-                                            e.currentTarget.style.background = 'rgba(255,255,255,0.5)'
-                                            e.currentTarget.style.transform = 'translateX(2px)'
+                                            e.currentTarget.style.background = 'var(--surface-hover)'
                                         }
                                     }}
                                     onMouseLeave={(e) => {
                                         if (!isActive) {
                                             e.currentTarget.style.background = 'transparent'
-                                            e.currentTarget.style.transform = 'translateX(0)'
                                         }
                                     }}
                                 >
@@ -464,22 +456,21 @@ export default function ChatMessages({ onClose, onUnreadCountChange }) {
                                         {hasUnread && (
                                             <div style={{
                                                 position: 'absolute',
-                                                top: '-4px',
-                                                right: '-4px',
-                                                background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                                                top: '-2px',
+                                                right: '-2px',
+                                                background: 'var(--gradient-error)',
                                                 color: '#fff',
-                                                borderRadius: '12px',
-                                                minWidth: '22px',
-                                                height: '22px',
+                                                borderRadius: '10px',
+                                                minWidth: '20px',
+                                                height: '20px',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
-                                                fontSize: '11px',
+                                                fontSize: '10px',
                                                 fontWeight: 700,
-                                                border: '2px solid #fff',
-                                                padding: '0 5px',
-                                                boxShadow: '0 2px 8px rgba(239, 68, 68, 0.4)',
-                                                animation: 'pulse 2s infinite'
+                                                border: '2px solid var(--card)',
+                                                padding: '0 4px',
+                                                boxShadow: '0 2px 4px rgba(239, 68, 68, 0.3)'
                                             }}>
                                                 {person.unreadCount > 99 ? '99+' : person.unreadCount}
                                             </div>
@@ -496,8 +487,8 @@ export default function ChatMessages({ onClose, onUnreadCountChange }) {
                                         }}>
                                             <span style={{
                                                 fontSize: '15px',
-                                                fontWeight: hasUnread ? 700 : 600,
-                                                color: '#111827',
+                                                fontWeight: hasUnread ? 600 : 500,
+                                                color: 'var(--text-primary)',
                                                 overflow: 'hidden',
                                                 textOverflow: 'ellipsis',
                                                 whiteSpace: 'nowrap'
@@ -507,8 +498,8 @@ export default function ChatMessages({ onClose, onUnreadCountChange }) {
                                             {person.lastMessageAt && (
                                                 <span style={{
                                                     fontSize: '11px',
-                                                    color: '#9ca3af',
-                                                    fontWeight: 600,
+                                                    color: hasUnread ? 'var(--accent)' : 'var(--text-tertiary)',
+                                                    fontWeight: 500,
                                                     flexShrink: 0,
                                                     marginLeft: '8px'
                                                 }}>
@@ -517,42 +508,42 @@ export default function ChatMessages({ onClose, onUnreadCountChange }) {
                                             )}
                                         </div>
                                         
-                                        {person.lastMessage ? (
+                                        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px'}}>
+                                            {person.lastMessage ? (
+                                                <div style={{
+                                                    fontSize: '13px',
+                                                    color: hasUnread ? 'var(--text-secondary)' : 'var(--text-tertiary)',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap',
+                                                    fontWeight: hasUnread ? 500 : 400,
+                                                    flex: 1
+                                                }}>
+                                                    {person.lastMessage.substring(0, 35)}
+                                                    {person.lastMessage.length > 35 ? '...' : ''}
+                                                </div>
+                                            ) : (
+                                                <div style={{
+                                                    fontSize: '13px',
+                                                    color: 'var(--text-tertiary)',
+                                                    fontStyle: 'italic',
+                                                    flex: 1
+                                                }}>
+                                                    Start conversation
+                                                </div>
+                                            )}
                                             <div style={{
-                                                fontSize: '13px',
-                                                color: hasUnread ? '#4b5563' : '#9ca3af',
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                whiteSpace: 'nowrap',
-                                                fontWeight: hasUnread ? 500 : 400,
-                                                marginBottom: '6px'
+                                                padding: '3px 8px',
+                                                background: 'var(--surface-active)',
+                                                color: 'var(--text-secondary)',
+                                                borderRadius: '6px',
+                                                fontSize: '10px',
+                                                fontWeight: 600,
+                                                textTransform: 'capitalize',
+                                                flexShrink: 0
                                             }}>
-                                                {person.lastMessage.substring(0, 35)}
-                                                {person.lastMessage.length > 35 ? '...' : ''}
+                                                {person.role}
                                             </div>
-                                        ) : (
-                                            <div style={{
-                                                fontSize: '13px',
-                                                color: '#9ca3af',
-                                                fontStyle: 'italic',
-                                                marginBottom: '6px'
-                                            }}>
-                                                Click to start conversation
-                                            </div>
-                                        )}
-                                        
-                                        <div style={{
-                                            display: 'inline-block',
-                                            padding: '3px 10px',
-                                            background: 'linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)',
-                                            color: '#6b7280',
-                                            borderRadius: '6px',
-                                            fontSize: '11px',
-                                            fontWeight: 600,
-                                            textTransform: 'capitalize',
-                                            boxShadow: '0 1px 3px rgba(0,0,0,0.08)'
-                                        }}>
-                                            {person.role}
                                         </div>
                                     </div>
                                 </div>
@@ -584,30 +575,30 @@ export default function ChatMessages({ onClose, onUnreadCountChange }) {
                     
                     {/* Chat Header */}
                     <div style={{
-                        padding: '20px 28px',
-                        borderBottom: '1px solid #e5e7eb',
+                        padding: '16px 20px',
+                        borderBottom: '1px solid var(--border)',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '14px',
-                        background: 'linear-gradient(to right, #fff 0%, #fafbfc 100%)',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                        background: 'var(--card)',
+                        minHeight: '70px',
                         position: 'relative',
-                        zIndex: 1
+                        zIndex: 1,
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
                     }}>
-                        <InitialAvatar name={selectedContact.name} size="large" />
+                        <InitialAvatar name={selectedContact.name} size="medium" />
                         <div style={{flex: 1}}>
                             <div style={{
-                                fontSize: '18px',
-                                fontWeight: 700,
-                                color: '#111827',
-                                marginBottom: '3px',
-                                letterSpacing: '-0.3px'
+                                fontSize: '17px',
+                                fontWeight: 600,
+                                color: 'var(--text-primary)',
+                                marginBottom: '3px'
                             }}>
                                 {selectedContact.name}
                             </div>
                             <div style={{
                                 fontSize: '13px',
-                                color: '#6b7280',
+                                color: 'var(--text-secondary)',
                                 textTransform: 'capitalize',
                                 fontWeight: 500
                             }}>
@@ -618,9 +609,8 @@ export default function ChatMessages({ onClose, onUnreadCountChange }) {
                             width: '10px',
                             height: '10px',
                             borderRadius: '50%',
-                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                            boxShadow: '0 0 0 3px rgba(16, 185, 129, 0.2)',
-                            animation: 'pulse 2s infinite'
+                            background: 'var(--color-success)',
+                            boxShadow: '0 0 0 3px var(--color-success-light)'
                         }} />
                     </div>
 
@@ -628,14 +618,15 @@ export default function ChatMessages({ onClose, onUnreadCountChange }) {
                     <div style={{
                         flex: 1,
                         overflowY: 'auto',
-                        padding: '28px',
-                        background: 'linear-gradient(to bottom, #fafbfc 0%, #f9fafb 50%, #ffffff 100%)',
+                        padding: '20px',
+                        background: 'var(--bg)',
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '14px',
+                        gap: '12px',
                         position: 'relative',
-                        zIndex: 1
-                    }}>
+                        zIndex: 1,
+                        height: 'calc(100vh - 340px)'
+                    }} className="custom-scrollbar">
                         {messages.length === 0 ? (
                             <div style={{
                                 textAlign: 'center',
@@ -685,35 +676,30 @@ export default function ChatMessages({ onClose, onUnreadCountChange }) {
                                             gap: '4px'
                                         }}>
                                             <div style={{
-                                                padding: '12px 16px',
-                                                borderRadius: isSent ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                                                background: isSent 
-                                                    ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' 
-                                                    : '#fff',
-                                                color: isSent ? '#fff' : '#111827',
+                                                padding: '10px 14px',
+                                                borderRadius: isSent ? 'var(--radius) var(--radius) 4px var(--radius)' : 'var(--radius) var(--radius) var(--radius) 4px',
+                                                background: isSent ? 'var(--gradient-primary)' : 'var(--card)',
+                                                color: isSent ? '#fff' : 'var(--text-primary)',
                                                 fontSize: '14px',
-                                                lineHeight: '1.6',
-                                                boxShadow: isSent 
-                                                    ? '0 4px 12px rgba(102, 126, 234, 0.3)'
-                                                    : '0 2px 8px rgba(0,0,0,0.08)',
-                                                border: isSent ? 'none' : '1px solid #e5e7eb',
+                                                lineHeight: '1.5',
+                                                boxShadow: isSent ? '0 2px 8px rgba(102, 126, 234, 0.25)' : '0 1px 3px rgba(0,0,0,0.1)',
                                                 wordBreak: 'break-word',
-                                                fontWeight: 500
+                                                fontWeight: 400,
+                                                position: 'relative',
+                                                border: isSent ? 'none' : '1px solid var(--border)',
+                                                paddingBottom: '6px'
                                             }}>
                                                 {msg.content}
-                                            </div>
-                                            <div style={{
-                                                fontSize: '11px',
-                                                color: '#9ca3af',
-                                                paddingLeft: isSent ? 0 : '6px',
-                                                paddingRight: isSent ? '6px' : 0,
-                                                textAlign: isSent ? 'right' : 'left',
-                                                fontWeight: 600,
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '6px',
-                                                justifyContent: isSent ? 'flex-end' : 'flex-start'
-                                            }}>
+                                                <div style={{
+                                                    fontSize: '10px',
+                                                    color: isSent ? 'rgba(255,255,255,0.8)' : 'var(--text-tertiary)',
+                                                    marginTop: '4px',
+                                                    fontWeight: 500,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '4px',
+                                                    justifyContent: isSent ? 'flex-end' : 'flex-start'
+                                                }}>
                                                 {formatTime(msg.createdAt)}
                                                 {isSent && (
                                                     <svg 
@@ -752,6 +738,7 @@ export default function ChatMessages({ onClose, onUnreadCountChange }) {
                                                     </svg>
                                                 )}
                                             </div>
+                                            </div>
                                         </div>
                                     </div>
                                 )
@@ -764,15 +751,15 @@ export default function ChatMessages({ onClose, onUnreadCountChange }) {
                     <form 
                         onSubmit={handleSendMessage}
                         style={{
-                            padding: '20px 28px',
-                            background: 'linear-gradient(to right, #fafbfc 0%, #fff 100%)',
-                            borderTop: '1px solid #e5e7eb',
+                            padding: '16px 20px',
+                            background: 'var(--card)',
+                            borderTop: '1px solid var(--border)',
                             display: 'flex',
                             gap: '12px',
                             alignItems: 'center',
-                            boxShadow: '0 -1px 3px rgba(0,0,0,0.05)',
                             position: 'relative',
-                            zIndex: 1
+                            zIndex: 1,
+                            boxShadow: '0 -1px 3px rgba(0,0,0,0.05)'
                         }}
                     >
                         <input
@@ -783,22 +770,21 @@ export default function ChatMessages({ onClose, onUnreadCountChange }) {
                             disabled={sending}
                             style={{
                                 flex: 1,
-                                padding: '14px 18px',
-                                border: '2px solid #e5e7eb',
-                                borderRadius: '14px',
+                                padding: '11px 16px',
+                                border: '1px solid var(--border)',
+                                borderRadius: 'var(--radius)',
                                 fontSize: '14px',
                                 outline: 'none',
-                                transition: 'all 0.2s ease',
-                                background: '#fff',
-                                color: '#111827',
-                                fontWeight: 500
+                                background: 'var(--bg)',
+                                color: 'var(--text-primary)',
+                                transition: 'var(--transition)'
                             }}
                             onFocus={(e) => {
-                                e.target.style.borderColor = '#667eea'
-                                e.target.style.boxShadow = '0 0 0 4px rgba(102, 126, 234, 0.1)'
+                                e.target.style.borderColor = 'var(--accent)'
+                                e.target.style.boxShadow = '0 0 0 3px rgba(102, 126, 234, 0.1)'
                             }}
                             onBlur={(e) => {
-                                e.target.style.borderColor = '#e5e7eb'
+                                e.target.style.borderColor = 'var(--border)'
                                 e.target.style.boxShadow = 'none'
                             }}
                         />
@@ -806,37 +792,28 @@ export default function ChatMessages({ onClose, onUnreadCountChange }) {
                             type="submit"
                             disabled={sending || !newMessage.trim()}
                             style={{
-                                width: '52px',
-                                height: '52px',
-                                background: sending || !newMessage.trim() 
-                                    ? 'linear-gradient(135deg, #e5e7eb 0%, #d1d5db 100%)' 
-                                    : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                width: '44px',
+                                height: '44px',
+                                background: sending || !newMessage.trim() ? 'var(--border)' : 'var(--gradient-primary)',
                                 color: '#fff',
                                 border: 'none',
-                                borderRadius: '14px',
-                                fontSize: '20px',
-                                fontWeight: 'bold',
+                                borderRadius: 'var(--radius)',
+                                fontSize: '18px',
                                 cursor: sending || !newMessage.trim() ? 'not-allowed' : 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                transition: 'all 0.2s ease',
+                                transition: 'var(--transition)',
                                 flexShrink: 0,
-                                boxShadow: sending || !newMessage.trim() 
-                                    ? 'none' 
-                                    : '0 4px 12px rgba(102, 126, 234, 0.3)'
+                                boxShadow: sending || !newMessage.trim() ? 'none' : '0 2px 8px rgba(102, 126, 234, 0.25)'
                             }}
                             onMouseEnter={(e) => {
                                 if (!sending && newMessage.trim()) {
-                                    e.target.style.transform = 'scale(1.05) translateY(-1px)'
-                                    e.target.style.boxShadow = '0 6px 16px rgba(102, 126, 234, 0.4)'
+                                    e.target.style.transform = 'scale(1.05)'
                                 }
                             }}
                             onMouseLeave={(e) => {
-                                if (!sending && newMessage.trim()) {
-                                    e.target.style.transform = 'scale(1)'
-                                    e.target.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)'
-                                }
+                                e.target.style.transform = 'scale(1)'
                             }}
                         >
                             {sending ? '⏳' : '➤'}

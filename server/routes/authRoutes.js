@@ -55,52 +55,7 @@ router.post('/forgot-password', asyncHandler(async (req, res) => {
         throw new Error('No account found with this email');
     }
 
-    // Check user role
-    if (user.role === 'hr') {
-        // HR: Create request for admin
-        await PasswordReset.deleteMany({ email: trimmedEmail });
-        
-        const resetRequest = await PasswordReset.create({
-            email: trimmedEmail,
-            userType: 'hr-request',
-            role: 'hr',
-            status: 'pending',
-            requestedBy: user._id
-        });
-
-        return res.json({
-            message: 'Password reset request sent to administrator. You will receive an email once your password is reset.',
-            email: trimmedEmail,
-            userType: 'hr-request',
-            userName: user.name,
-            role: 'hr',
-            requiresOTP: false
-        });
-    }
-
-    if (user.role === 'manager') {
-        // Manager: Create request for HR
-        await PasswordReset.deleteMany({ email: trimmedEmail });
-        
-        const resetRequest = await PasswordReset.create({
-            email: trimmedEmail,
-            userType: 'manager-request',
-            role: 'manager',
-            status: 'pending',
-            requestedBy: user._id
-        });
-
-        return res.json({
-            message: 'Password reset request sent to HR. You will receive an email once your password is reset.',
-            email: trimmedEmail,
-            userType: 'manager-request',
-            userName: user.name,
-            role: 'manager',
-            requiresOTP: false
-        });
-    }
-
-    // Other users (developer, designer, tester, client): Send OTP directly
+    // All users (including HR and Manager): Send OTP directly
     const otp = generateOTP();
     
     await PasswordReset.deleteMany({ email: trimmedEmail });

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch, clearSession, resolveAssetUrl } from '../api'
 import ProfileSettings from '../components/ProfileSettings'
@@ -74,6 +74,8 @@ export default function ManagerDashboard(){
 	const [reviewInputs, setReviewInputs] = useState({})
 	const [activeView, setActiveView] = useState('overview')
 	const [unreadMessages, setUnreadMessages] = useState(0)
+	const [showProfileMenu, setShowProfileMenu] = useState(false)
+	const headerRef = useRef(null)
 	const [editingTeamId, setEditingTeamId] = useState(null)
 	const [deletingTeamId, setDeletingTeamId] = useState(null)
 	const [profileForm, setProfileForm] = useState(emptyProfileForm)
@@ -106,6 +108,17 @@ export default function ManagerDashboard(){
 		clearSession()
 		nav('/user/login')
 	}
+
+	useEffect(() => {
+		const handleClickOutside = (e) => {
+			if (headerRef.current && !headerRef.current.contains(e.target)) {
+				setShowManageDropdown(false)
+				setShowViewDropdown(false)
+			}
+		}
+		document.addEventListener('click', handleClickOutside)
+		return () => document.removeEventListener('click', handleClickOutside)
+	}, [])
 
 	const handleEditTeam = (team) => {
 		setEditingTeamId(team._id)
@@ -391,73 +404,141 @@ export default function ManagerDashboard(){
 	const displayName = profile ? profile.name || profile.email || 'Manager' : 'Manager'
 
 	return (
-		<div className="user-dashboard-fullscreen">
-			<div className="user-header-row">
-				<div className="user-top-bar">
-					<div className="user-brand">
-						<div className="user-brand-logo">T</div>
-						<div className="user-brand-text">
-							<h2>Manager Dashboard</h2>
+		<>
+			{/* Team Form Modal */}
+			{showTeamForm && (
+				<div className="modal-overlay" onClick={() => {
+					setShowTeamForm(false)
+					setEditingTeamId(null)
+					setTeamForm(emptyTeamForm)
+				}}>
+					<div className="modal-content" onClick={(e) => e.stopPropagation()} style={{maxWidth: '600px'}}>
+						<div className="modal-header">
+							<h2 className="modal-title">{editingTeamId ? 'Edit Team' : 'Create New Team'}</h2>
+							<button className="modal-close" onClick={() => {
+								setShowTeamForm(false)
+								setEditingTeamId(null)
+								setTeamForm(emptyTeamForm)
+							}}>×</button>
+						</div>
+						<form className="form" onSubmit={handleTeamCreate}>
+							<label>Team name
+								<input value={teamForm.name} onChange={e=>setTeamForm(prev=>({ ...prev, name: e.target.value }))} required />
+							</label>
+							<label>Designer email
+								<input value={teamForm.designerEmail} onChange={e=>setTeamForm(prev=>({ ...prev, designerEmail: e.target.value }))} required />
+							</label>
+							<label>Developer email
+								<input value={teamForm.developerEmail} onChange={e=>setTeamForm(prev=>({ ...prev, developerEmail: e.target.value }))} required />
+							</label>
+							<label>Tester email
+								<input value={teamForm.testerEmail} onChange={e=>setTeamForm(prev=>({ ...prev, testerEmail: e.target.value }))} required />
+							</label>
+							<div className="form-row" style={{gap: 8}}>
+								<button className="btn" disabled={creatingTeam}>
+									{creatingTeam ? 'Saving...' : (editingTeamId ? 'Update Team' : 'Create Team')}
+								</button>
+								<button type="button" className="btn btn-outline" onClick={()=>{
+									setShowTeamForm(false)
+									setEditingTeamId(null)
+									setTeamForm(emptyTeamForm)
+								}}>Cancel</button>
+							</div>
+						</form>
+					</div>
+				</div>
+			)}
+
+		<div className="admin-dashboard">
+			{/* Glass-morphism Header */}
+			<header className="admin-glass-header" ref={headerRef}>
+				<div className="admin-glass-header-content">
+					{/* Left: Dashboard Title */}
+					<div className="admin-header-left">
+						<h1 className="admin-dashboard-title">Manager Dashboard</h1>
+					</div>
+
+					{/* Center: Navigation */}
+					<nav className="admin-header-nav">
+						<button 
+							className={`admin-nav-btn ${activeView === 'overview' ? 'active' : ''}`}
+							onClick={() => setActiveView('overview')}
+						>
+							<span className="nav-icon">🏠</span>
+							<span>Dashboard</span>
+						</button>
+
+						<div className="admin-nav-dropdown">
+							<button 
+								className={`admin-nav-btn ${['teams', 'tasks'].includes(activeView) ? 'active' : ''}`}
+						>
+							<span className="nav-icon">⚙️</span>
+							<span>Manage</span>
+							<span className="dropdown-arrow">▼</span>
+						</button>
+						<div className="admin-dropdown-menu">
+							<button className="dropdown-item" onClick={() => setActiveView('teams')}>
+								<span className="dropdown-icon">👥</span>
+								My Teams
+							</button>
+							<button className="dropdown-item" onClick={() => setActiveView('tasks')}>
+								<span className="dropdown-icon">✓</span>
+								Tasks
+							</button>
 						</div>
 					</div>
+
+					<div className="admin-nav-dropdown">
+						<button 
+							className={`admin-nav-btn ${['review', 'progress'].includes(activeView) ? 'active' : ''}`}
+						>
+							<span className="nav-icon">👁️</span>
+							<span>View</span>
+							<span className="dropdown-arrow">▼</span>
+						</button>
+						<div className="admin-dropdown-menu">
+							<button className="dropdown-item" onClick={() => setActiveView('review')}>
+								<span className="dropdown-icon">✅</span>
+								Review
+							</button>
+							<button className="dropdown-item" onClick={() => setActiveView('progress')}>
+								<span className="dropdown-icon">📊</span>
+								Task Progress
+							</button>
+						</div>
 				</div>
-				<div className="user-header">
-					<div className="user-welcome-inline">
-						<h1>Welcome, {displayName}! 👋</h1>
-					</div>
-					<div className="user-header-actions">
-						<button className="btn" onClick={logout}>Sign out</button>
-					</div>
-				</div>
-			</div>
-			<div className="user-layout-wrapper">
-				<div className="user-sidebar">
-					<nav className="user-sidebar-nav">
-						<button className={`user-sidebar-item ${activeView === 'overview' ? 'active' : ''}`} onClick={() => setActiveView('overview')}>
-							<span className="user-sidebar-icon">🏠</span>
-							<span>Overview</span>
-						</button>
-						<button className={`user-sidebar-item ${activeView === 'teams' ? 'active' : ''}`} onClick={() => setActiveView('teams')}>
-							<span className="user-sidebar-icon">👥</span>
-							<span>My Teams</span>
-						</button>
-						<button className={`user-sidebar-item ${activeView === 'tasks' ? 'active' : ''}`} onClick={() => setActiveView('tasks')}>
-							<span className="user-sidebar-icon">✓</span>
-							<span>Tasks</span>
-						</button>
-						<button className={`user-sidebar-item ${activeView === 'review' ? 'active' : ''}`} onClick={() => setActiveView('review')}>
-							<span className="user-sidebar-icon">✅</span>
-							<span>Review</span>
-						</button>
-						<button className={`user-sidebar-item ${activeView === 'progress' ? 'active' : ''}`} onClick={() => setActiveView('progress')}>
-							<span className="user-sidebar-icon">📊</span>
-							<span>Task Progress</span>
-					</button>
-					<button className={`user-sidebar-item ${activeView === 'messages' ? 'active' : ''}`} onClick={() => setActiveView('messages')} style={{ position: 'relative' }}>
-						<span className="user-sidebar-icon">💬</span>
-						<span>Messages</span>
-						{unreadMessages > 0 && <span className="unread-badge">{unreadMessages}</span>}
-					</button>
-					<button className={`user-sidebar-item ${activeView === 'profile' ? 'active' : ''}`} onClick={() => setActiveView('profile')}>
-							<span className="user-sidebar-icon">👤</span>
-							<span>Profile</span>
-						</button>
-						<button className={`user-sidebar-item ${activeView === 'settings' ? 'active' : ''}`} onClick={() => setActiveView('settings')}>
-							<span className="user-sidebar-icon">⚙️</span>
-							<span>Settings</span>
-						</button>
-					</nav>
-				</div>
-				<div className="user-main">
-					<div className="user-content">
-						{loading && <div>Loading manager data...</div>}
-						{message && <div style={{background:'#e6f7ef', color:'#106433', padding:'12px 16px', borderRadius:8, marginBottom:16, border:'1px solid #c6f6d5'}}>{message}</div>}
-						{error && <div className="error">{error}</div>}
-						{!loading && profile && (
-							<>
-								{/* OVERVIEW - Stats Only */}
-								{activeView === 'overview' && (
-									<>
+
+				<button 
+					className={`admin-nav-btn ${activeView === 'messages' ? 'active' : ''}`}
+					onClick={() => setActiveView('messages')}
+				>
+					<span className="nav-icon">💬</span>
+					<span>Messages</span>
+					{unreadMessages > 0 && <span className="message-badge">{unreadMessages}</span>}
+				</button>
+			</nav>
+
+			{/* Right: Logout Button Only */}
+			<div className="admin-header-right">
+				<button className="admin-logout-btn" onClick={logout}>
+					<span className="logout-icon">🚪</span>
+					<span>Logout</span>
+				</button>
+		</div>
+	</div>
+</header>
+
+			{/* Main Content Area */}
+			<div className="admin-content">
+				<div className="admin-main">
+					{loading && <div className="loading-message">Loading dashboard...</div>}
+					{error && <div className="error-message">{error}</div>}
+					
+					{!loading && profile && (
+						<>
+							{/* OVERVIEW - Stats Only */}
+							{activeView === 'overview' && (
+								<>
 										{/* Stats Cards Grid */}
 										<div style={{
 											display: 'grid',
@@ -677,41 +758,11 @@ export default function ManagerDashboard(){
 											<button className="btn" onClick={()=>{
 												setEditingTeamId(null)
 												setTeamForm(emptyTeamForm)
-												setShowTeamForm(!showTeamForm)
+												setShowTeamForm(true)
 											}}>
-												{showTeamForm ? 'Cancel' : '+ Add Team'}
+												+ Add Team
 											</button>
 										</div>
-
-										{showTeamForm && (
-											<form className="form" style={{marginBottom: 24, background: '#f8fafc', padding: 24, borderRadius: 12, border: '2px solid #e2e8f0'}} onSubmit={handleTeamCreate}>
-												<h4 style={{margin: '0 0 16px 0', fontSize: 18, fontWeight: 600}}>
-													{editingTeamId ? 'Edit Team' : 'Create New Team'}
-												</h4>
-												<label>Team name
-													<input value={teamForm.name} onChange={e=>setTeamForm(prev=>({ ...prev, name: e.target.value }))} required />
-												</label>
-												<label>Designer email
-													<input value={teamForm.designerEmail} onChange={e=>setTeamForm(prev=>({ ...prev, designerEmail: e.target.value }))} required />
-												</label>
-												<label>Developer email
-													<input value={teamForm.developerEmail} onChange={e=>setTeamForm(prev=>({ ...prev, developerEmail: e.target.value }))} required />
-												</label>
-												<label>Tester email
-													<input value={teamForm.testerEmail} onChange={e=>setTeamForm(prev=>({ ...prev, testerEmail: e.target.value }))} required />
-												</label>
-												<div className="form-row" style={{gap: 8}}>
-													<button className="btn" disabled={creatingTeam}>
-														{creatingTeam ? 'Saving...' : (editingTeamId ? 'Update Team' : 'Create Team')}
-													</button>
-													<button type="button" className="btn btn-outline" onClick={()=>{
-														setShowTeamForm(false)
-														setEditingTeamId(null)
-														setTeamForm(emptyTeamForm)
-													}}>Cancel</button>
-												</div>
-											</form>
-										)}
 
 										{teams.length ? (
 											<div style={{display: 'grid', gap: 16}}>
@@ -1069,23 +1120,63 @@ export default function ManagerDashboard(){
 											<h3 className="dashboard-section-title">Settings</h3>
 										</div>
 										<div style={{maxWidth: 720, margin: '0 auto'}}>
-											<ProfileSettings
-												kind="user"
-												view="settings"
-												profile={profile}
-												passwordDisabledMessage="You can't update your password here. Please contact the HR who created your account to update your password."
-												onProfileUpdated={(updated) => {
-													setProfile((prev) => ({ ...prev, ...(updated || {}) }))
-												}}
-											/>
-										</div>
-									</div>
-								)}
-							</>
-						)}
+							<ProfileSettings
+								kind="user"
+								view="settings"
+								profile={profile}
+								passwordDisabledMessage="You can't update your password here. Please contact the HR who created your account to update your password."
+								onProfileUpdated={(updated) => {
+									setProfile((prev) => ({ ...prev, ...(updated || {}) }))
+								}}
+							/>
+						</div>
 					</div>
-				</div>
+				)}
+			</>
+		)}
+	</div>
+</div>
+
+			{/* Floating Profile Button - Bottom Right */}
+			<div className="floating-profile-wrapper">
+				<button className="floating-profile-btn" onClick={() => setShowProfileMenu(!showProfileMenu)}>
+					{profile?.profilePhoto ? (
+						<img src={resolveAssetUrl(profile.profilePhoto)} alt="Profile" className="profile-avatar" />
+					) : (
+						<div className="profile-avatar-placeholder">
+							{profile?.name?.charAt(0).toUpperCase() || 'U'}
+						</div>
+					)}
+				</button>
+
+				{showProfileMenu && (
+					<div className="floating-profile-menu">
+						<div className="profile-menu-header">
+							{profile?.profilePhoto ? (
+								<img src={resolveAssetUrl(profile.profilePhoto)} alt="Profile" className="profile-menu-avatar" />
+							) : (
+								<div className="profile-menu-avatar-placeholder">
+									{profile?.name?.charAt(0).toUpperCase() || 'U'}
+								</div>
+							)}
+							<div className="profile-menu-info">
+								<div className="profile-menu-name">{profile?.name || 'User'}</div>
+								<div className="profile-menu-role">Manager</div>
+							</div>
+						</div>
+						<div className="profile-menu-divider"></div>
+						<button className="profile-menu-item" onClick={() => { setActiveView('profile'); setShowProfileMenu(false); }}>
+							<span className="profile-menu-icon">👤</span>
+							Profile
+						</button>
+						<button className="profile-menu-item" onClick={() => { setActiveView('settings'); setShowProfileMenu(false); }}>
+							<span className="profile-menu-icon">⚙️</span>
+							Settings
+						</button>
+					</div>
+				)}
 			</div>
-		</div>
+</div>
+		</>
 	)
 }

@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch, clearSession, resolveAssetUrl, uploadWithProgress } from '../api'
 import { useUserWorkspace } from '../hooks/useUserWorkspace'
 import ProfileSettings from '../components/ProfileSettings'
 import ChatMessages from '../components/ChatMessages'
+import SubmitRequestForm from '../components/SubmitRequestForm'
 
 const STATUS = {
 	CLIENT_REQUESTED: 'Client Requested',
@@ -635,78 +636,149 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 		const roleLabel = formatRole(effectiveRole)
 
 		const [activeView, setActiveView] = React.useState('tasks')
+		const [showViewDropdown, setShowViewDropdown] = useState(false)
+		const [showProfileMenu, setShowProfileMenu] = useState(false)
+		const headerRef = useRef(null)
+
+		useEffect(() => {
+			const handleClickOutside = (e) => {
+				if (headerRef.current && !headerRef.current.contains(e.target)) {
+					setShowViewDropdown(false)
+				}
+			}
+			document.addEventListener('click', handleClickOutside)
+			return () => document.removeEventListener('click', handleClickOutside)
+		}, [])
 
 		return (
-			<div className="user-dashboard-fullscreen">
-				<div className="user-header-row">
-					<div className="user-top-bar">
-						<div className="user-brand">
-							<div className="user-brand-logo">T</div>
-							<div className="user-brand-text">
-								<h2>{roleLabel || role} Dashboard</h2>
-							</div>
+			<div className="admin-dashboard">
+				{/* Glass-morphism Header */}
+				<header className="admin-glass-header" ref={headerRef}>
+					<div className="admin-glass-header-content">
+						{/* Left: Dashboard Title */}
+						<div className="admin-header-left">
+							<h1 className="admin-dashboard-title">{heading}</h1>
 						</div>
-					</div>
-					<div className="user-header">
-						<div className="user-welcome-inline">
-							<h1>Welcome, {displayName}! 👋</h1>
-							<p style={{fontSize: '15px', color: '#64748b', marginTop: '8px', fontWeight: 500}}>
-								Ready to make great things happen today! Let's turn your tasks into achievements.
-							</p>
-						</div>
-						<div className="user-header-actions">
-							<button className="btn" onClick={logout}>Sign out</button>
-						</div>
-					</div>
-				</div>
-				<div className="user-layout-wrapper">
-					<div className="user-sidebar">
-						<nav className="user-sidebar-nav">
-							<button className={`user-sidebar-item ${activeView === 'overview' ? 'active' : ''}`} onClick={() => setActiveView('overview')}>
-								<span className="user-sidebar-icon">🏠</span>
-								<span>Overview</span>
+
+						{/* Center: Navigation */}
+						<nav className="admin-header-nav">
+							<button 
+								className={`admin-nav-btn ${activeView === 'overview' ? 'active' : ''}`}
+								onClick={() => setActiveView('overview')}
+							>
+								<span className="nav-icon">🏠</span>
+								<span>Dashboard</span>
 							</button>
-							<button className={`user-sidebar-item ${activeView === 'tasks' ? 'active' : ''}`} onClick={() => setActiveView('tasks')}>
-								<span className="user-sidebar-icon">✓</span>
+
+							<button 
+								className={`admin-nav-btn ${activeView === 'tasks' ? 'active' : ''}`}
+								onClick={() => setActiveView('tasks')}
+							>
+								<span className="nav-icon">✓</span>
 								<span>My Tasks</span>
 							</button>
+
 							{allowTaskRequest && (
-								<button className={`user-sidebar-item ${activeView === 'submit' ? 'active' : ''}`} onClick={() => setActiveView('submit')}>
-									<span className="user-sidebar-icon">➕</span>
+								<button 
+									className={`admin-nav-btn ${activeView === 'submit' ? 'active' : ''}`}
+									onClick={() => setActiveView('submit')}
+								>
+									<span className="nav-icon">➕</span>
 									<span>Submit Request</span>
 								</button>
 							)}
-							<button className={`user-sidebar-item ${activeView === 'progress' ? 'active' : ''}`} onClick={() => setActiveView('progress')}>
-								<span className="user-sidebar-icon">📊</span>
-								<span>Task Progress</span>
-							</button>
-							<button className={`user-sidebar-item ${activeView === 'notifications' ? 'active' : ''}`} onClick={() => setActiveView('notifications')}>
-								<span className="user-sidebar-icon">🔔</span>
-								<span>Notifications{unreadCount ? ` (${unreadCount})` : ''}</span>
-						</button>
-						<button className={`user-sidebar-item ${activeView === 'messages' ? 'active' : ''}`} onClick={() => setActiveView('messages')} style={{ position: 'relative' }}>
-							<span className="user-sidebar-icon">💬</span>
-							<span>Messages</span>
-							{unreadMessages > 0 && (
-								<span className="chat-icon-btn-badge" style={{ position: 'absolute', top: '8px', right: '8px' }}>
-									{unreadMessages}
-								</span>
-							)}
-						</button>
-						<button className={`user-sidebar-item ${activeView === 'profile' ? 'active' : ''}`} onClick={() => setActiveView('profile')}>
-								<span className="user-sidebar-icon">👤</span>
-								<span>Profile</span>
-							</button>
-							<button className={`user-sidebar-item ${activeView === 'settings' ? 'active' : ''}`} onClick={() => setActiveView('settings')}>
-								<span className="user-sidebar-icon">⚙️</span>
-								<span>Settings</span>
+
+							<div className="admin-nav-dropdown">
+								<button 
+									className={`admin-nav-btn ${['progress', 'notifications'].includes(activeView) ? 'active' : ''}`}
+									onClick={() => setShowViewDropdown(!showViewDropdown)}
+								>
+									<span className="nav-icon">👁️</span>
+									<span>View</span>
+									<span className="dropdown-arrow">▼</span>
+								</button>
+								{showViewDropdown && (
+									<div className="admin-dropdown-menu">
+										<button className="dropdown-item" onClick={() => { setActiveView('progress'); setShowViewDropdown(false); }}>
+											<span className="dropdown-icon">📊</span>
+											Task Progress
+										</button>
+										<button className="dropdown-item" onClick={() => { setActiveView('notifications'); setShowViewDropdown(false); }}>
+											<span className="dropdown-icon">🔔</span>
+											Notifications {unreadCount ? `(${unreadCount})` : ''}
+										</button>
+									</div>
+								)}
+							</div>
+
+							<button 
+								className={`admin-nav-btn ${activeView === 'messages' ? 'active' : ''}`}
+								onClick={() => setActiveView('messages')}
+							>
+								<span className="nav-icon">💬</span>
+								<span>Messages</span>
+								{unreadMessages > 0 && <span className="message-badge">{unreadMessages}</span>}
 							</button>
 						</nav>
+
+						{/* Right: Logout Button */}
+						<div className="admin-header-right">
+							<button className="admin-logout-btn" onClick={logout}>
+								<span className="logout-icon">🚪</span>
+								<span>Logout</span>
+							</button>
+						</div>
 					</div>
-					<div className="user-main">
-						<div className="user-content">
-							{/* OVERVIEW VIEW */}
-							{activeView === 'overview' ? (
+				</header>
+
+				{/* Floating Profile Button */}
+				<div className="floating-profile-wrapper">
+					<button 
+						className="floating-profile-btn"
+						onClick={() => setShowProfileMenu(!showProfileMenu)}
+					>
+						{profile?.profilePhoto ? (
+							<img src={resolveAssetUrl(profile.profilePhoto)} alt="Profile" className="profile-avatar" />
+						) : (
+							<div className="profile-avatar-placeholder">
+								{profile?.name?.charAt(0).toUpperCase() || 'U'}
+							</div>
+						)}
+					</button>
+
+					{showProfileMenu && (
+						<div className="floating-profile-menu">
+							<div className="profile-menu-header">
+								{profile?.profilePhoto ? (
+									<img src={resolveAssetUrl(profile.profilePhoto)} alt="Profile" className="profile-menu-avatar" />
+								) : (
+									<div className="profile-menu-avatar-placeholder">
+										{profile?.name?.charAt(0).toUpperCase() || 'U'}
+									</div>
+								)}
+								<div className="profile-menu-info">
+									<div className="profile-menu-name">{profile?.name || 'User'}</div>
+									<div className="profile-menu-role">{roleLabel}</div>
+								</div>
+							</div>
+							<div className="profile-menu-divider"></div>
+							<button className="profile-menu-item" onClick={() => { setActiveView('profile'); setShowProfileMenu(false); }}>
+								<span className="profile-menu-icon">👤</span>
+								Profile
+							</button>
+							<button className="profile-menu-item" onClick={() => { setActiveView('settings'); setShowProfileMenu(false); }}>
+								<span className="profile-menu-icon">⚙️</span>
+								Settings
+							</button>
+						</div>
+					)}
+				</div>
+
+				{/* Main Content */}
+				<div className="admin-content">
+					<div className="admin-main">
+						{/* OVERVIEW VIEW */}
+						{activeView === 'overview' ? (
 								<>
 									{/* Stats Cards Grid */}
 									<div style={{
@@ -938,213 +1010,217 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 							) : null}
 
 							{/* TASK PROGRESS VIEW */}
-							{activeView === 'progress' ? (
-								<div className="dashboard-section">
-									<div className="dashboard-section-header">
-										<h3 className="dashboard-section-title">My Task Progress</h3>
-										<span style={{fontSize: 14, color: '#64748b', fontWeight: 500}}>
-									{taskList.length} Total Tasks
-								</span>
-							</div>
-							{taskList.length > 0 ? (
-								<div style={{display: 'grid', gap: 20}}>
-									{taskList.map(task => {
-										const stageInfo = getTaskStatusStage(task.status)
-										return (
+						{activeView === 'progress' ? (
+							<div className="dashboard-section">
+								<div className="dashboard-section-header">
+									<h3 className="dashboard-section-title">My Task Progress</h3>
+									<span style={{fontSize: 14, color: '#64748b', fontWeight: 500}}>
+								{taskList.length} Total Tasks
+							</span>
+						</div>
+						{taskList.length > 0 ? (
+							<div style={{display: 'grid', gap: 20}}>
+								{taskList.map(task => {
+									const stageInfo = getTaskStatusStage(task.status)
+									return (
+										<div 
+											key={task._id} 
+											className="item-card" 
+											style={{
+												position: 'relative',
+												overflow: 'hidden',
+												background: '#fff',
+												border: '2px solid #e2e8f0'
+											}}
+										>
 											<div 
-												key={task._id} 
-												className="item-card" 
 												style={{
-													position: 'relative',
-													overflow: 'hidden',
-													background: '#fff',
-													border: '2px solid #e2e8f0'
+													position: 'absolute',
+													top: 0,
+													left: 0,
+													bottom: 0,
+													width: `${stageInfo.progress}%`,
+													background: `linear-gradient(90deg, ${stageInfo.color}15, ${stageInfo.color}05)`,
+													transition: 'width 1s ease-in-out'
 												}}
-											>
-												<div 
-													style={{
-														position: 'absolute',
-														top: 0,
-														left: 0,
-														bottom: 0,
-														width: `${stageInfo.progress}%`,
-														background: `linear-gradient(90deg, ${stageInfo.color}15, ${stageInfo.color}05)`,
-														transition: 'width 1s ease-in-out'
-													}}
-												/>
-												<div style={{position: 'relative', zIndex: 1}}>
-													<div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16}}>
-														<h4 className="item-title" style={{margin: 0, flex: 1}}>{task.title}</h4>
-														<span 
-															className="status-badge" 
-															style={{
-																background: `${stageInfo.color}20`,
-																color: stageInfo.color,
-																border: `2px solid ${stageInfo.color}`,
-																fontWeight: 600,
-																fontSize: 13
-															}}
-														>
-															{stageInfo.stage}
-														</span>
+											/>
+											<div style={{position: 'relative', zIndex: 1}}>
+												<div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16}}>
+													<h4 className="item-title" style={{margin: 0, flex: 1}}>{task.title}</h4>
+													<span 
+														className="status-badge" 
+														style={{
+															background: `${stageInfo.color}20`,
+															color: stageInfo.color,
+															border: `2px solid ${stageInfo.color}`,
+															fontWeight: 600,
+															fontSize: 13
+														}}
+													>
+														{stageInfo.stage}
+													</span>
+														</div>
+														<div style={{
+															padding: 12,
+															background: '#f8fafc',
+															borderRadius: 8,
+															marginBottom: 12,
+															border: '1px solid #e2e8f0'
+														}}>
+															<div style={{fontSize: 13, fontWeight: 600, color: '#1e293b', marginBottom: 6}}>
+																Current Status
 															</div>
+															<div style={{fontSize: 14, color: '#475569', fontWeight: 500}}>
+																{task.status}
+															</div>
+														</div>
+														<div style={{marginBottom: 12}}>
+															<div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6}}>
+																<span style={{fontSize: 13, fontWeight: 600, color: '#475569'}}>Progress</span>
+																<span style={{fontSize: 13, fontWeight: 700, color: stageInfo.color}}>{stageInfo.progress}%</span>
+															</div>
+															<div style={{
+																width: '100%',
+																height: 10,
+																background: '#e2e8f0',
+																borderRadius: 20,
+																overflow: 'hidden',
+																boxShadow: `0 0 0 2px ${stageInfo.color}20`
+															}}>
+																<div style={{
+																	width: `${stageInfo.progress}%`,
+																	height: '100%',
+																	background: `linear-gradient(90deg, ${stageInfo.color}, ${stageInfo.color}dd)`,
+																	borderRadius: 20,
+																	transition: 'width 1s ease-in-out',
+																	boxShadow: `0 0 10px ${stageInfo.color}80`
+																}} />
+															</div>
+														</div>
+														{task.deadline && (
 															<div style={{
 																padding: 12,
 																background: '#f8fafc',
 																borderRadius: 8,
-																marginBottom: 12,
-																border: '1px solid #e2e8f0'
+																fontSize: 13,
+																color: '#64748b'
 															}}>
-																<div style={{fontSize: 13, fontWeight: 600, color: '#1e293b', marginBottom: 6}}>
-																	Current Status
-																</div>
-																<div style={{fontSize: 14, color: '#475569', fontWeight: 500}}>
-																	{task.status}
-																</div>
+																<strong>Deadline:</strong> {formatDate(task.deadline)}
 															</div>
-															<div style={{marginBottom: 12}}>
-																<div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6}}>
-																	<span style={{fontSize: 13, fontWeight: 600, color: '#475569'}}>Progress</span>
-																	<span style={{fontSize: 13, fontWeight: 700, color: stageInfo.color}}>{stageInfo.progress}%</span>
-																</div>
-																<div style={{
-																	width: '100%',
-																	height: 10,
-																	background: '#e2e8f0',
-																	borderRadius: 20,
-																	overflow: 'hidden',
-																	boxShadow: `0 0 0 2px ${stageInfo.color}20`
-																}}>
-																	<div style={{
-																		width: `${stageInfo.progress}%`,
-																		height: '100%',
-																		background: `linear-gradient(90deg, ${stageInfo.color}, ${stageInfo.color}dd)`,
-																		borderRadius: 20,
-																		transition: 'width 1s ease-in-out',
-																		boxShadow: `0 0 10px ${stageInfo.color}80`
-																	}} />
-																</div>
-															</div>
-															{task.deadline && (
-																<div style={{
-																	padding: 12,
-																	background: '#f8fafc',
-																	borderRadius: 8,
-																	fontSize: 13,
-																	color: '#64748b'
-																}}>
-																	<strong>Deadline:</strong> {formatDate(task.deadline)}
-																</div>
-															)}
-														</div>
+														)}
 													</div>
-												)
-											})}
+												</div>
+											)
+										})}
+									</div>
+								) : (
+									<p style={{color: 'var(--muted)', padding: '24px', textAlign: 'center', background: '#f8fafc', borderRadius: '12px'}}>
+										No tasks to track.
+									</p>
+								)}
+							</div>
+						) : null}
+
+						{/* PROFILE VIEW */}
+						{activeView === 'profile' ? (
+							<div className="dashboard-section">
+								<div className="dashboard-section-header">
+									<h3 className="dashboard-section-title">My Profile</h3>
+								</div>
+								<div style={{maxWidth: 720, margin: '0 auto'}}>
+									<ProfileSettings
+										kind="user"
+										view="profile"
+										profile={profile}
+										onProfileUpdated={async () => {
+											await refresh()
+										}}
+									/>
+								</div>
+							</div>
+						) : null}
+
+						{/* SETTINGS VIEW */}
+						{activeView === 'settings' ? (
+							<div className="dashboard-section">
+								<div className="dashboard-section-header">
+									<h3 className="dashboard-section-title">Settings</h3>
+								</div>
+								<div style={{maxWidth: 720, margin: '0 auto'}}>
+									<ProfileSettings
+										kind="user"
+										view="settings"
+										profile={profile}
+										onProfileUpdated={async () => {
+											await refresh()
+										}}
+									/>
+								</div>
+							</div>
+						) : null}
+
+						{activeView === 'submit' && allowTaskRequest ? (
+							<div className="dashboard-section" style={{ padding: '32px', background: 'transparent' }}>
+								<SubmitRequestForm 
+									onSuccess={() => {
+										setMessage('Request submitted successfully!')
+										setActiveView('tasks')
+										refresh()
+									}}
+								/>
+							</div>
+						) : null}
+
+						{activeView === 'notifications' ? (
+							<div className="dashboard-section">
+								<div className="dashboard-section-header">
+									<h2 className="dashboard-section-title">Notifications</h2>
+									<button className="btn small" onClick={markAllNotificationsRead} disabled={notificationsLoading || !notifications.length}>Mark all read</button>
+								</div>
+								{notificationsLoading ? <div>Loading notifications...</div> : (
+									notifications.length ? (
+										<div className="items-list">
+											{notifications.map((item) => (
+												<div key={item._id} className="item-card" style={{ opacity: item.read ? 0.7 : 1 }}>
+													<div className="item-title">{item.message}</div>
+													<div className="item-meta">
+														{item.task && item.task.title ? `Task: ${item.task.title}` : ''}
+														{item.stage ? ` ${item.stage}` : ''}
+														<span style={{ marginLeft: 6 }}>{formatDate(item.createdAt, true)}</span>
+													</div>
+													{!item.read ? (
+														<button className="btn small" style={{ marginTop: 6 }} onClick={() => markNotificationRead(item._id)}>Mark read</button>
+													) : null}
+												</div>
+											))}
 										</div>
-									) : (
-										<p style={{color: 'var(--muted)', padding: '24px', textAlign: 'center', background: '#f8fafc', borderRadius: '12px'}}>
-											No tasks to track.
-										</p>
-									)}
-								</div>
-							) : null}
+									) : <div className="help">No notifications</div>
+								)}
+							</div>
+						) : null}
 
-							{/* PROFILE VIEW */}
-							{activeView === 'profile' ? (
-								<div className="dashboard-section">
-									<div className="dashboard-section-header">
-										<h3 className="dashboard-section-title">My Profile</h3>
-									</div>
-									<div style={{maxWidth: 720, margin: '0 auto'}}>
-										<ProfileSettings
-											kind="user"
-											view="profile"
-											profile={profile}
-											onProfileUpdated={async () => {
-												await refresh()
-											}}
-										/>
-									</div>
-								</div>
-							) : null}
+						{activeView === 'tasks' ? (
+							<>
+								{message ? <div className="success-message">{message}</div> : null}
+								{error ? <div className="error">{error}</div> : null}
+								{loading ? <div>Loading workspace...</div> : null}
 
-							{/* SETTINGS VIEW */}
-							{activeView === 'settings' ? (
-								<div className="dashboard-section">
-									<div className="dashboard-section-header">
-										<h3 className="dashboard-section-title">Settings</h3>
-									</div>
-									<div style={{maxWidth: 720, margin: '0 auto'}}>
-										<ProfileSettings
-											kind="user"
-											view="settings"
-											profile={profile}
-											onProfileUpdated={async () => {
-												await refresh()
-											}}
-										/>
-									</div>
-								</div>
-							) : null}
+								{!loading && profile ? (
+									effectiveRole === 'client' ? renderClientTasks() : renderRoleAssignments()
+								) : null}
+							</>
+						) : null}
 
-							{activeView === 'submit' && allowTaskRequest ? (
-								<div className="dashboard-section">
-									<h2 className="dashboard-section-title">Submit New Project Request</h2>
-									<button className="btn" onClick={goSubmitRequest}>Create Request</button>
-								</div>
-							) : null}
-
-							{activeView === 'notifications' ? (
-								<div className="dashboard-section">
-									<div className="dashboard-section-header">
-										<h2 className="dashboard-section-title">Notifications</h2>
-										<button className="btn small" onClick={markAllNotificationsRead} disabled={notificationsLoading || !notifications.length}>Mark all read</button>
-									</div>
-									{notificationsLoading ? <div>Loading notifications...</div> : (
-										notifications.length ? (
-											<div className="items-list">
-												{notifications.map((item) => (
-													<div key={item._id} className="item-card" style={{ opacity: item.read ? 0.7 : 1 }}>
-														<div className="item-title">{item.message}</div>
-														<div className="item-meta">
-															{item.task && item.task.title ? `Task: ${item.task.title}` : ''}
-															{item.stage ? ` ${item.stage}` : ''}
-															<span style={{ marginLeft: 6 }}>{formatDate(item.createdAt, true)}</span>
-														</div>
-														{!item.read ? (
-															<button className="btn small" style={{ marginTop: 6 }} onClick={() => markNotificationRead(item._id)}>Mark read</button>
-														) : null}
-													</div>
-												))}
-											</div>
-										) : <div className="help">No notifications</div>
-									)}
-								</div>
-							) : null}
-
-							{activeView === 'tasks' ? (
-								<>
-									{message ? <div className="success-message">{message}</div> : null}
-									{error ? <div className="error">{error}</div> : null}
-									{loading ? <div>Loading workspace...</div> : null}
-
-									{!loading && profile ? (
-										effectiveRole === 'client' ? renderClientTasks() : renderRoleAssignments()
-									) : null}
-								</>
-							) : null}
-
-							{/* MESSAGES VIEW */}
-							{activeView === 'messages' ? (
-								<div className="dashboard-section">
-									<ChatMessages />
-								</div>
-							) : null}
-						</div>
+						{/* MESSAGES VIEW */}
+						{activeView === 'messages' ? (
+							<div className="dashboard-section">
+								<ChatMessages />
+							</div>
+						) : null}
 					</div>
 				</div>
-			</div>
-		)
+				</div>
+			)
 	}
 }
 

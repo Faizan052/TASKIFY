@@ -610,13 +610,232 @@ router.put('/tasks/:id/status', protect, asyncHandler(async (req, res) => {
 }));
 
 // Client submits a new task request
+// AI Analysis for document feasibility check
+router.post('/analyze-request', protect, roleRequired('client'), upload.single('document'), asyncHandler(async (req, res) => {
+    const { deadline, category, title, description } = req.body;
+    
+    if (!req.file) {
+        res.status(400);
+        throw new Error('Document file is required for analysis');
+    }
+
+    if (!deadline) {
+        res.status(400);
+        throw new Error('Deadline is required for analysis');
+    }
+
+    // Calculate days until deadline
+    const deadlineDate = new Date(deadline);
+    const today = new Date();
+    const diffTime = deadlineDate - today;
+    const daysAvailable = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    // Enhanced AI Analysis
+    const fileSize = req.file.size;
+    const fileSizeMB = fileSize / (1024 * 1024);
+    const fileName = req.file.originalname.toLowerCase();
+
+    // Complexity scoring system
+    let complexityScore = 0;
+    let baseEstimate = 14;
+
+    // Category-based estimates with more intelligence
+    const categoryData = {
+        'website': { 
+            baseMin: 14, baseMax: 45, weight: 1.0,
+            keywords: ['responsive', 'database', 'api', 'admin', 'payment', 'authentication', 'dashboard'],
+            complexFactors: { responsive: 2, database: 5, api: 4, admin: 3, payment: 7, authentication: 4, dashboard: 4 }
+        },
+        'mobile-app': { 
+            baseMin: 21, baseMax: 60, weight: 1.3,
+            keywords: ['ios', 'android', 'native', 'push', 'camera', 'gps', 'payment', 'offline'],
+            complexFactors: { native: 7, push: 3, camera: 4, gps: 3, payment: 7, offline: 5 }
+        },
+        'desktop-app': { 
+            baseMin: 21, baseMax: 60, weight: 1.2,
+            keywords: ['windows', 'mac', 'linux', 'installer', 'database', 'sync'],
+            complexFactors: { multiplatform: 10, installer: 3, database: 5, sync: 6 }
+        },
+        'testing': { 
+            baseMin: 7, baseMax: 14, weight: 0.5,
+            keywords: ['automated', 'integration', 'unit', 'load', 'security'],
+            complexFactors: { automated: 2, integration: 3, load: 4, security: 5 }
+        },
+        'updation': { 
+            baseMin: 3, baseMax: 14, weight: 0.6,
+            keywords: ['migration', 'refactor', 'upgrade', 'dependency'],
+            complexFactors: { migration: 5, refactor: 7, upgrade: 3, dependency: 2 }
+        },
+        'design': { 
+            baseMin: 7, baseMax: 21, weight: 0.8,
+            keywords: ['prototype', 'animation', 'branding', 'mockup', 'illustration'],
+            complexFactors: { prototype: 2, animation: 4, branding: 5, illustration: 3 }
+        },
+        'api': { 
+            baseMin: 10, baseMax: 30, weight: 0.9,
+            keywords: ['rest', 'graphql', 'websocket', 'authentication', 'documentation'],
+            complexFactors: { rest: 2, graphql: 5, websocket: 6, authentication: 4, documentation: 2 }
+        },
+        'database': { 
+            baseMin: 7, baseMax: 21, weight: 0.8,
+            keywords: ['migration', 'optimization', 'replication', 'backup', 'sharding'],
+            complexFactors: { migration: 4, optimization: 3, replication: 6, backup: 2, sharding: 8 }
+        },
+        'other': { baseMin: 14, baseMax: 30, weight: 1.0, keywords: [], complexFactors: {} }
+    };
+
+    const catData = categoryData[category] || categoryData['other'];
+
+    // Analyze description for complexity keywords
+    const fullText = `${title} ${description}`.toLowerCase();
+    let keywordMatches = 0;
+
+    if (catData.keywords && catData.keywords.length > 0) {
+        catData.keywords.forEach(keyword => {
+            if (fullText.includes(keyword)) {
+                keywordMatches++;
+                complexityScore += catData.complexFactors[keyword] || 2;
+            }
+        });
+    }
+
+    // File size intelligence
+    if (fileSizeMB > 10) {
+        complexityScore += 15; // Very detailed requirements
+    } else if (fileSizeMB > 5) {
+        complexityScore += 10;
+    } else if (fileSizeMB > 2) {
+        complexityScore += 5;
+    } else if (fileSizeMB < 0.1) {
+        complexityScore -= 5; // Very brief, possibly simple
+    }
+
+    // File type intelligence
+    if (fileName.endsWith('.pdf')) {
+        complexityScore += 2; // PDFs usually detailed
+    } else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
+        complexityScore += 3; // Word docs often very detailed
+    }
+
+    // Calculate base estimate
+    if (complexityScore > 25) {
+        baseEstimate = catData.baseMax;
+    } else if (complexityScore > 15) {
+        baseEstimate = Math.ceil((catData.baseMin + catData.baseMax) * 0.7);
+    } else if (complexityScore > 5) {
+        baseEstimate = Math.ceil((catData.baseMin + catData.baseMax) / 2);
+    } else {
+        baseEstimate = catData.baseMin;
+    }
+
+    // Add QA buffer (20%)
+    const estimatedDays = Math.ceil(baseEstimate * 1.2);
+
+    // Determine complexity level
+    let complexity = 'medium';
+    if (complexityScore > 20 || keywordMatches > 5) {
+        complexity = 'high';
+    } else if (complexityScore < 8 && keywordMatches < 2) {
+        complexity = 'low';
+    }
+
+    const feasible = daysAvailable >= estimatedDays;
+    const buffer = daysAvailable - estimatedDays;
+
+    let message = '';
+    let recommendations = [];
+    let allowSubmit = true;
+
+    if (feasible) {
+        if (buffer > 21) {
+            message = `🎉 Excellent Planning! Your project has a very comfortable timeline. Our AI analyzed ${keywordMatches} complexity indicators and estimates ${estimatedDays} days for quality delivery. With ${daysAvailable} days provided, you have a generous ${buffer}-day buffer for refinements and iterations.`;
+            recommendations = [
+                'Timeline is exceptionally well-planned',
+                'Ample time for thorough testing and quality assurance',
+                'Buffer allows for scope adjustments if needed',
+                'Multiple review cycles possible',
+                'Time for detailed documentation'
+            ];
+        } else if (buffer > 14) {
+            message = `✅ Great Timeline! Based on ${complexityScore} complexity points identified, your deadline provides a solid buffer. Estimated completion: ${estimatedDays} days. Available: ${daysAvailable} days. This allows for proper development and testing.`;
+            recommendations = [
+                'Timeline is well-balanced and achievable',
+                'Sufficient buffer for quality delivery',
+                'Clear requirements will optimize the timeline',
+                'Regular feedback loops recommended',
+                'Time available for minor scope adjustments'
+            ];
+        } else if (buffer > 7) {
+            message = `✅ Good Timeline. Your project is feasible with moderate buffer time. AI detected ${keywordMatches} key complexity factors. Estimated: ${estimatedDays} days, Available: ${daysAvailable} days.`;
+            recommendations = [
+                'Timeline is achievable with focused execution',
+                'Provide clear and detailed requirements upfront',
+                'Be available for quick feedback and approvals',
+                'Prioritize features clearly',
+                'Minimize scope changes during development'
+            ];
+        } else {
+            message = `⚠️ Tight but Feasible. Your deadline is achievable but requires efficient execution. Complexity analysis shows ${complexity} complexity level. Estimated: ${estimatedDays} days, Available: ${daysAvailable} days. Only ${buffer} days buffer.`;
+            recommendations = [
+                'Provide extremely clear and detailed requirements',
+                'Be highly available for immediate feedback',
+                'Avoid any scope changes during development',
+                'Quick decision-making will be critical',
+                'Daily or frequent check-ins recommended'
+            ];
+        }
+    } else {
+        const shortage = Math.abs(buffer);
+        message = `❌ Timeline Challenge Detected! Our advanced AI analysis identified ${complexityScore} complexity points and ${keywordMatches} critical features. Estimated delivery time: ${estimatedDays} days. Your deadline: ${daysAvailable} days. Shortage: ${shortage} days.`;
+        
+        const extensionNeeded = shortage + Math.ceil(estimatedDays * 0.15); // Add 15% more
+        
+        recommendations = [
+            `Extend deadline by ${extensionNeeded} days for quality delivery`,
+            `Reduce scope to fit ${daysAvailable}-day timeline`,
+            'Consider phased delivery with priority features first',
+            'Break project into multiple milestones',
+            'Discuss MVP (Minimum Viable Product) approach',
+            'Remove lower-priority features',
+            'Simplify complex features if possible'
+        ];
+        
+        allowSubmit = shortage < 5; // More strict
+        
+        if (!allowSubmit) {
+            message += ` ⛔ We strongly recommend adjusting requirements or timeline before submission to ensure quality delivery.`;
+        } else {
+            message += ` ⚠️ You may proceed, but expect a very aggressive schedule with potential quality compromises.`;
+        }
+    }
+
+    res.json({
+        feasible,
+        estimatedDays,
+        daysAvailable,
+        buffer,
+        complexity,
+        complexityScore,
+        keywordMatches,
+        message,
+        recommendations,
+        allowSubmit,
+        analysis: {
+            fileSize: fileSizeMB.toFixed(2) + ' MB',
+            category,
+            deadline: deadlineDate.toLocaleDateString(),
+            intelligenceLevel: 'Advanced AI v2.0'
+        }
+    });
+}));
+
 router.post('/tasks', protect, roleRequired('client'), upload.array('attachments', 8), asyncHandler(async (req, res) => {
     if (req.isAdmin) {
         res.status(403);
         throw new Error('Admin cannot access user routes');
     }
 
-    const { title, description, deadline } = req.body;
+    const { title, description, deadline, category, aiAnalysis } = req.body;
     if (!title || !description || !deadline) {
         res.status(400);
         throw new Error('Title, description, and deadline are required');
@@ -641,11 +860,21 @@ router.post('/tasks', protect, roleRequired('client'), upload.array('attachments
         title,
         description,
         deadline: parsedDeadline,
+        category: category || 'other',
         attachments,
         createdBy: req.user._id,
         createdByModel: 'User',
         createdByRole: req.user.role
     });
+
+    // Store AI analysis if provided
+    if (aiAnalysis) {
+        try {
+            task.aiAnalysis = typeof aiAnalysis === 'string' ? JSON.parse(aiAnalysis) : aiAnalysis;
+        } catch (e) {
+            // Ignore parsing errors
+        }
+    }
 
     setTaskState(task, {
         status: STATUS.CLIENT_REQUESTED,

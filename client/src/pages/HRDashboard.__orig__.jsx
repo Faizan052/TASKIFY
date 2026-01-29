@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiFetch, clearSession, resolveAssetUrl } from '../api'
+import { apiFetch, clearSession } from '../api'
 import ProfileSettings from '../components/ProfileSettings'
 import ChatMessages from '../components/ChatMessages'
+import PasswordResetRequests from '../components/PasswordResetRequests'
 
 const emptyManagerForm = { name: '', email: '', password: '' }
 const emptyProfileForm = { name: '', phone: '', department: '', profilePicture: null }
@@ -19,8 +20,6 @@ export default function HRDashboard(){
 	const [message, setMessage] = useState('')
 	const [activeView, setActiveView] = useState('overview')
 	const [unreadMessages, setUnreadMessages] = useState(0)
-	const [showProfileMenu, setShowProfileMenu] = useState(false)
-	const headerRef = useRef(null)
 	const [managerForm, setManagerForm] = useState(emptyManagerForm)
 	const [submittingManager, setSubmittingManager] = useState(false)
 	const [showManagerForm, setShowManagerForm] = useState(false)
@@ -31,10 +30,9 @@ export default function HRDashboard(){
 	const [profileForm, setProfileForm] = useState(emptyProfileForm)
 	const [updatingProfile, setUpdatingProfile] = useState(false)
 	const [deletingManagerId, setDeletingManagerId] = useState(null)
-
-	const teamsByManager = useMemo(() => {
+	const teamsByManager = useMemo(()=>{
 		if (!overview) return {}
-		return overview.teams.reduce((acc, team) => {
+		return overview.teams.reduce((acc, team)=>{
 			const managerId = team.manager ? team.manager._id : 'unassigned'
 			if (!acc[managerId]) acc[managerId] = []
 			acc[managerId].push(team)
@@ -42,7 +40,7 @@ export default function HRDashboard(){
 		}, {})
 	}, [overview])
 
-	const managerPipeline = useMemo(() => tasks.filter(task => [
+	const managerPipeline = useMemo(()=>tasks.filter(task => [
 		'Awaiting Manager Assignment',
 		'Design In Progress',
 		'Design Completed - Pending Manager Review',
@@ -52,16 +50,16 @@ export default function HRDashboard(){
 		'Testing Completed - Pending Manager Final Review',
 		'Changes Requested'
 	].includes(task.status)), [tasks])
-	const awaitingHrReview = useMemo(() => tasks.filter(task => task.status === 'Awaiting HR Review'), [tasks])
-	const awaitingClientReview = useMemo(() => tasks.filter(task => task.status === 'Awaiting Client Review'), [tasks])
-	const completedTasks = useMemo(() => tasks.filter(task => task.status === 'Completed'), [tasks])
+	const awaitingHrReview = useMemo(()=>tasks.filter(task => task.status === 'Awaiting HR Review'), [tasks])
+	const awaitingClientReview = useMemo(()=>tasks.filter(task => task.status === 'Awaiting Client Review'), [tasks])
+	const completedTasks = useMemo(()=>tasks.filter(task => task.status === 'Completed'), [tasks])
 
 	const formatManagerName = (task) => {
 		if (task.manager) return task.manager.name || task.manager.email || 'Manager'
 		if (task.assignedTo && task.assignedTo.role === 'manager') {
 			return task.assignedTo.name || task.assignedTo.email || 'Manager'
 		}
-		return 'â€”'
+		return 'GÇö'
 	}
 
 	const loadDashboard = useCallback(async (withSpinner = false) => {
@@ -209,7 +207,7 @@ export default function HRDashboard(){
 		finally{ setSendingToClientId('') }
 	}
 
-	const formatDeadline = (value) => value ? new Date(value).toLocaleDateString() : 'â€”'
+	const formatDeadline = (value) => value ? new Date(value).toLocaleDateString() : 'GÇö'
 	const displayName = profile ? profile.name || profile.email || 'HR' : 'HR'
 
 	const getTaskStatusStage = (status) => {
@@ -231,136 +229,77 @@ export default function HRDashboard(){
 	}
 
 	return (
-		<>
-		<div className="admin-dashboard">
-			{/* Glass-morphism Header */}
-			<header className="admin-glass-header" ref={headerRef}>
-				<div className="admin-glass-header-content">
-					{/* Left: Dashboard Title */}
-					<div className="admin-header-left">
-						<h1 className="admin-dashboard-title">HR Dashboard</h1>
-					</div>
-
-					{/* Center: Navigation */}
-					<nav className="admin-header-nav">
-						<button 
-							className={`admin-nav-btn ${activeView === 'overview' ? 'active' : ''}`}
-							onClick={() => setActiveView('overview')}
-						>
-							<span className="nav-icon">ğŸ </span>
-							<span>Dashboard</span>
-						</button>
-
-						<div className="admin-nav-dropdown">
-							<button 
-								className={`admin-nav-btn ${['managers', 'requests', 'teams'].includes(activeView) ? 'active' : ''}`}
-						>
-							<span className="nav-icon">âš™ï¸</span>
-							<span>Manage</span>
-							<span className="dropdown-arrow">â–¼</span>
-						</button>
-						<div className="admin-dropdown-menu">
-							<button className="dropdown-item" onClick={() => setActiveView('managers')}>
-								<span className="dropdown-icon">ğŸ‘”</span>
-								Managers
-							</button>
-							<button className="dropdown-item" onClick={() => setActiveView('requests')}>
-								<span className="dropdown-icon">ğŸ“¨</span>
-								Requests
-							</button>
-							<button className="dropdown-item" onClick={() => setActiveView('teams')}>
-								<span className="dropdown-icon">ğŸ‘¥</span>
-								Teams
-							</button>
+		<div className="user-dashboard-fullscreen">
+			<div className="user-header-row">
+				<div className="user-top-bar">
+					<div className="user-brand">
+						<div className="user-brand-logo">T</div>
+						<div className="user-brand-text">
+							<h2>HR Dashboard</h2>
 						</div>
 					</div>
-
-					<div className="admin-nav-dropdown">
-						<button 
-							className={`admin-nav-btn ${['progress', 'review'].includes(activeView) ? 'active' : ''}`}
-						>
-							<span className="nav-icon">ğŸ‘ï¸</span>
-							<span>View</span>
-							<span className="dropdown-arrow">â–¼</span>
-						</button>
-						<div className="admin-dropdown-menu">
-							<button className="dropdown-item" onClick={() => setActiveView('progress')}>
-								<span className="dropdown-icon">ğŸ“Š</span>
-								Task Progress
-							</button>
-							<button className="dropdown-item" onClick={() => setActiveView('review')}>
-								<span className="dropdown-icon">âœ…</span>
-								HR Review
-							</button>
-						</div>
 				</div>
-
-				<button 
-					className={`admin-nav-btn ${activeView === 'messages' ? 'active' : ''}`}
-					onClick={() => setActiveView('messages')}
-				>
-					<span className="nav-icon">ğŸ’¬</span>
-					<span>Messages</span>
-					{unreadMessages > 0 && <span className="message-badge">{unreadMessages}</span>}
-				</button>
-			</nav>
-
-			{/* Right: Logout */}
-			<div className="admin-header-right">
-				<button className="admin-logout-btn" onClick={logout}>
-					<span className="logout-icon">ğŸšª</span>
-					<span>Logout</span>
-				</button>
+				<div className="user-header">
+					<div className="user-welcome-inline">
+						<h1>Welcome, {displayName}! =ƒæï</h1>
+					</div>
+					<div className="user-header-actions">
+						<button className="btn" onClick={logout}>Sign out</button>
+					</div>
+				</div>
 			</div>
-		</div>
-	</header>
-
-	{/* Floating Profile Button */}
-	<div className="floating-profile-wrapper">
-		<button className="floating-profile-btn" onClick={() => setShowProfileMenu(!showProfileMenu)}>
-			{profile?.profilePhoto ? (
-				<img src={resolveAssetUrl(profile.profilePhoto)} alt="Profile" className="profile-avatar" />
-			) : (
-				<div className="profile-avatar-placeholder">
-					{profile?.name?.charAt(0).toUpperCase() || 'U'}
+			<div className="user-layout-wrapper">
+				<div className="user-sidebar">
+					<nav className="user-sidebar-nav">
+						<button className={`user-sidebar-item ${activeView === 'overview' ? 'active' : ''}`} onClick={() => setActiveView('overview')}>
+							<span className="user-sidebar-icon">=ƒÅá</span>
+							<span>Overview</span>
+						</button>
+						<button className={`user-sidebar-item ${activeView === 'managers' ? 'active' : ''}`} onClick={() => setActiveView('managers')}>
+							<span className="user-sidebar-icon">=ƒæö</span>
+							<span>Managers</span>
+						</button>
+						<button className={`user-sidebar-item ${activeView === 'requests' ? 'active' : ''}`} onClick={() => setActiveView('requests')}>
+							<span className="user-sidebar-icon">=ƒô¿</span>
+							<span>Requests</span>
+						</button>
+						<button className={`user-sidebar-item ${activeView === 'teams' ? 'active' : ''}`} onClick={() => setActiveView('teams')}>
+							<span className="user-sidebar-icon">=ƒæÑ</span>
+							<span>Teams</span>
+						</button>
+						<button className={`user-sidebar-item ${activeView === 'progress' ? 'active' : ''}`} onClick={() => setActiveView('progress')}>
+							<span className="user-sidebar-icon">=ƒôè</span>
+							<span>Task Progress</span>
+						</button>
+						<button className={`user-sidebar-item ${activeView === 'review' ? 'active' : ''}`} onClick={() => setActiveView('review')}>
+							<span className="user-sidebar-icon">G£à</span>
+							<span>HR Review</span>
+					</button>
+					<button className={`user-sidebar-item ${activeView === 'messages' ? 'active' : ''}`} onClick={() => setActiveView('messages')} style={{ position: 'relative' }}>
+						<span className="user-sidebar-icon">=ƒÆ¼</span>
+						<span>Messages</span>
+						{unreadMessages > 0 && <span className="unread-badge">{unreadMessages}</span>}
+					</button>
+					<button className={`user-sidebar-item ${activeView === 'profile' ? 'active' : ''}`} onClick={() => setActiveView('profile')}>
+							<span className="user-sidebar-icon">=ƒæñ</span>
+							<span>Profile</span>
+						</button>
+						<button className={`user-sidebar-item ${activeView === 'password-requests' ? 'active' : ''}`} onClick={() => setActiveView('password-requests')}>
+							<span className="user-sidebar-icon">=ƒöæ</span>
+							<span>Password Requests</span>
+						</button>
+						<button className={`user-sidebar-item ${activeView === 'settings' ? 'active' : ''}`} onClick={() => setActiveView('settings')}>
+							<span className="user-sidebar-icon">GÜÖn+Å</span>
+							<span>Settings</span>
+						</button>
+					</nav>
 				</div>
-			)}
-		</button>
-
-		{showProfileMenu && (
-			<div className="floating-profile-menu">
-				<div className="profile-menu-header">
-					{profile?.profilePhoto ? (
-						<img src={resolveAssetUrl(profile.profilePhoto)} alt="Profile" className="profile-menu-avatar" />
-					) : (
-						<div className="profile-menu-avatar-placeholder">
-							{profile?.name?.charAt(0).toUpperCase() || 'U'}
-						</div>
-					)}
-					<div className="profile-menu-info">
-						<div className="profile-menu-name">{profile?.name || 'User'}</div>
-						<div className="profile-menu-role">HR</div>
-					</div>
-				</div>
-				<div className="profile-menu-divider"></div>
-				<button className="profile-menu-item" onClick={() => { setActiveView('profile'); setShowProfileMenu(false); }}>
-					<span className="profile-menu-icon">ğŸ‘¤</span>
-					Profile
-				</button>
-				<button className="profile-menu-item" onClick={() => { setActiveView('settings'); setShowProfileMenu(false); }}>
-					<span className="profile-menu-icon">âš™ï¸</span>
-					Settings
-				</button>
-			</div>
-		)}
-	</div>
-
-			<div className="admin-content">
-				<div className="admin-main">
-					{loading && <div>Loading HR data...</div>}
-					{message && <div style={{background:'#e6f7ef', color:'#106433', padding:'12px 16px', borderRadius:8, marginBottom:16, border:'1px solid #c6f6d5'}}>{message}</div>}
-					{error && <div className="error">{error}</div>}
-					{!loading && profile && overview && (
+				<div className="user-main">
+					<div className="user-content">
+						{loading && <div>Loading HR data...</div>}
+						{message && <div style={{background:'#e6f7ef', color:'#106433', padding:'12px 16px', borderRadius:8, marginBottom:16, border:'1px solid #c6f6d5'}}>{message}</div>}
+						{error && <div className="error">{error}</div>}
+						{!loading && profile && overview && (
 							<>
 								{/* OVERVIEW */}
 								{activeView === 'overview' && (
@@ -383,9 +322,9 @@ export default function HRDashboard(){
 											}}
 											onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-4px)'}
 											onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-												<div style={{position: 'absolute', top: '-20px', right: '-20px', fontSize: '100px', opacity: 0.1}}>ğŸ‘”</div>
+												<div style={{position: 'absolute', top: '-20px', right: '-20px', fontSize: '100px', opacity: 0.1}}>=ƒæö</div>
 												<div style={{position: 'relative'}}>
-													<div style={{fontSize: '48px', marginBottom: '8px'}}>ğŸ‘”</div>
+													<div style={{fontSize: '48px', marginBottom: '8px'}}>=ƒæö</div>
 													<div style={{fontSize: '36px', fontWeight: 800, color: '#fff', marginBottom: '4px'}}>
 														{overview.managers ? overview.managers.length : 0}
 													</div>
@@ -405,9 +344,9 @@ export default function HRDashboard(){
 											}}
 											onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-4px)'}
 											onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-												<div style={{position: 'absolute', top: '-20px', right: '-20px', fontSize: '100px', opacity: 0.1}}>ğŸ“‹</div>
+												<div style={{position: 'absolute', top: '-20px', right: '-20px', fontSize: '100px', opacity: 0.1}}>=ƒôï</div>
 												<div style={{position: 'relative'}}>
-													<div style={{fontSize: '48px', marginBottom: '8px'}}>ğŸ“‹</div>
+													<div style={{fontSize: '48px', marginBottom: '8px'}}>=ƒôï</div>
 													<div style={{fontSize: '36px', fontWeight: 800, color: '#fff', marginBottom: '4px'}}>
 														{overview.pendingClientRequests ? overview.pendingClientRequests.length : 0}
 													</div>
@@ -427,9 +366,9 @@ export default function HRDashboard(){
 											}}
 											onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-4px)'}
 											onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}>
-												<div style={{position: 'absolute', top: '-20px', right: '-20px', fontSize: '100px', opacity: 0.1}}>ğŸ¤</div>
+												<div style={{position: 'absolute', top: '-20px', right: '-20px', fontSize: '100px', opacity: 0.1}}>=ƒñ¥</div>
 												<div style={{position: 'relative'}}>
-													<div style={{fontSize: '48px', marginBottom: '8px'}}>ğŸ¤</div>
+													<div style={{fontSize: '48px', marginBottom: '8px'}}>=ƒñ¥</div>
 													<div style={{fontSize: '36px', fontWeight: 800, color: '#fff', marginBottom: '4px'}}>
 														{overview.teams ? overview.teams.length : 0}
 													</div>
@@ -448,7 +387,7 @@ export default function HRDashboard(){
 											marginBottom: '24px'
 										}}>
 											<h3 style={{margin: '0 0 24px 0', fontSize: '22px', fontWeight: 700, color: '#111827'}}>
-												ğŸ“Š Task Pipeline Overview
+												=ƒôè Task Pipeline Overview
 											</h3>
 
 											<div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px'}}>
@@ -524,7 +463,7 @@ export default function HRDashboard(){
 													justifyContent: 'center',
 													fontSize: '28px',
 													flexShrink: 0
-												}}>ğŸ‘¥</div>
+												}}>=ƒæÑ</div>
 												<div>
 													<div style={{fontSize: '24px', fontWeight: 800, color: '#111827'}}>{overview.managers?.length || 0}</div>
 													<div style={{fontSize: '13px', color: '#6b7280', fontWeight: 600}}>Total Managers</div>
@@ -551,7 +490,7 @@ export default function HRDashboard(){
 													justifyContent: 'center',
 													fontSize: '28px',
 													flexShrink: 0
-												}}>ğŸ¤</div>
+												}}>=ƒñ¥</div>
 												<div>
 													<div style={{fontSize: '24px', fontWeight: 800, color: '#111827'}}>{overview.teams?.length || 0}</div>
 													<div style={{fontSize: '13px', color: '#6b7280', fontWeight: 600}}>Active Teams</div>
@@ -578,31 +517,60 @@ export default function HRDashboard(){
 													justifyContent: 'center',
 													fontSize: '28px',
 													flexShrink: 0
-												}}>âœ…</div>
+												}}>G£à</div>
 												<div>
 													<div style={{fontSize: '24px', fontWeight: 800, color: '#111827'}}>{completedTasks.length}</div>
 													<div style={{fontSize: '13px', color: '#6b7280', fontWeight: 600}}>Tasks Delivered</div>
 												</div>
 											</div>
 										</div>
-										</>
-										)}
+									</>
+								)}
 
 								{activeView === 'managers' && (
-									<div className="dashboard-section">
-										<div className="dashboard-section-header">
-											<h3 className="dashboard-section-title">Managers</h3>
-											<button
-												className="btn"
-												onClick={() => {
+									<>
+										<div className="dashboard-section">
+											<div className="dashboard-section-header">
+												<h3 className="dashboard-section-title">Managers</h3>
+												<button className="btn" onClick={() => {
 													setEditingManagerId(null)
 													setManagerForm(emptyManagerForm)
-													setShowManagerForm(true)
-												}}
-											>
-												+ Add Manager
-											</button>
-										</div>
+													setShowManagerForm(!showManagerForm)
+												}}>
+													{showManagerForm ? 'Cancel' : '+ Add Manager'}
+												</button>
+											</div>
+
+											{showManagerForm && (
+												<form className="form" style={{marginBottom: 24, background: '#f8fafc', padding: 24, borderRadius: 12, border: '2px solid #e2e8f0'}} onSubmit={handleManagerCreate}>
+													<h4 style={{margin: '0 0 16px 0', fontSize: 18, fontWeight: 600}}>
+														{editingManagerId ? 'Edit Manager' : 'Create New Manager'}
+													</h4>
+													<label>Name<input value={managerForm.name} onChange={e=>setManagerForm(prev=>({...prev, name: e.target.value}))} required/></label>
+													<label>Email
+														<input 
+															type="email" 
+															value={managerForm.email} 
+															onChange={e=>setManagerForm(prev=>({...prev, email: e.target.value}))} 
+															required 
+															disabled={editingManagerId !== null}
+															style={{opacity: editingManagerId ? 0.6 : 1}}
+														/>
+														{editingManagerId && <div className="help" style={{marginTop: 4}}>Email cannot be changed</div>}
+													</label>
+													<label>Password {editingManagerId && '(leave blank to keep current)'}
+														<input type="password" value={managerForm.password} onChange={e=>setManagerForm(prev=>({...prev, password: e.target.value}))} required={!editingManagerId}/>
+													</label>
+													<div className="form-row" style={{gap: 8}}>
+														<button className="btn" disabled={submittingManager}>{submittingManager ? 'Saving...' : (editingManagerId ? 'Update Manager' : 'Create Manager')}</button>
+														<button type="button" className="btn btn-outline" onClick={() => {
+															setShowManagerForm(false)
+															setEditingManagerId(null)
+															setManagerForm(emptyManagerForm)
+														}}>Cancel</button>
+													</div>
+												</form>
+											)}
 
 											{overview.managers && overview.managers.length > 0 ? (
 												<div style={{display: 'grid', gap: 16}}>
@@ -611,9 +579,9 @@ export default function HRDashboard(){
 															<div style={{flex: 1}}>
 																<h4 className="item-title" style={{margin: '0 0 4px 0'}}>{manager.name}</h4>
 																<div className="item-meta">
-																	<span>ğŸ“§ {manager.email}</span>
+																	<span>=ƒôº {manager.email}</span>
 																	{teamsByManager[manager._id] && (
-																		<span>ğŸ‘¥ {teamsByManager[manager._id].length} {teamsByManager[manager._id].length === 1 ? 'team' : 'teams'}</span>
+																		<span>=ƒæÑ {teamsByManager[manager._id].length} {teamsByManager[manager._id].length === 1 ? 'team' : 'teams'}</span>
 																	)}
 																</div>
 															</div>
@@ -643,7 +611,8 @@ export default function HRDashboard(){
 												</p>
 											)}
 										</div>
-							)}
+									</>
+								)}
 
 								{/* CLIENT REQUESTS VIEW */}
 								{activeView === 'requests' && (
@@ -651,38 +620,31 @@ export default function HRDashboard(){
 										<div className="dashboard-section-header">
 											<h3 className="dashboard-section-title">Pending Client Requests</h3>
 										</div>
-									{overview.pendingClientRequests && overview.pendingClientRequests.length ? (
-										<ul>
-											{overview.pendingClientRequests.map(task => {
-												const assignment = assignmentSelections[task._id] || {}
-												const clientName = task.createdBy ? task.createdBy.name : 'Client'
-												const deadlineLabel = formatDeadline(task.deadline)
-												return (
-													<li key={task._id} style={{marginBottom: 8}}>
-														<div>
-															<strong>{task.title}</strong>
-															<span>{` â€” from ${clientName} (deadline ${deadlineLabel})`}</span>
-														</div>
-														<div className="small-row">
-															<select value={assignment.managerId || ''} onChange={e=>setAssignmentSelection(task._id, e.target.value)}>
-																<option value="">Select manager</option>
-																{overview.managers.map(manager => (
-																	<option key={manager._id} value={manager._id}>{manager.name}</option>
-																))}
-															</select>
-															<button className="btn small" onClick={()=>handleAssignTask(task)} disabled={assigningTaskId === task._id}>
-																{assigningTaskId === task._id ? 'Assigning...' : 'Assign'}
-															</button>
-														</div>
-													</li>
-												)
-											})}
-										</ul>
-									) : (
-										<p style={{color:'var(--muted)', padding:'32px', textAlign:'center', background:'#f8fafc', borderRadius:'8px'}}>
-											No pending client requests at the moment.
-										</p>
-									)}
+						{overview.pendingClientRequests && overview.pendingClientRequests.length ? (
+							<ul>
+								{overview.pendingClientRequests.map(task => {
+									const assignment = assignmentSelections[task._id] || {}
+									return (
+										<li key={task._id} style={{marginBottom:8}}>
+											<div><strong>{task.title}</strong> GÇö from {task.createdBy ? task.createdBy.name : 'Client'} (deadline {formatDeadline(task.deadline)})</div>
+											<div className="small-row">
+												<select value={assignment.managerId || ''} onChange={e=>setAssignmentSelection(task._id, e.target.value)}>
+													<option value="">Select manager</option>
+													{overview.managers.map(manager => (
+														<option key={manager._id} value={manager._id}>{manager.name}</option>
+													))}
+												</select>
+												<button className="btn small" onClick={()=>handleAssignTask(task)} disabled={assigningTaskId === task._id}>{assigningTaskId === task._id ? 'Assigning...' : 'Assign'}</button>
+											</div>
+										</li>
+								)
+								})}
+							</ul>
+						) : (
+							<p style={{color:'var(--muted)', padding:'32px', textAlign:'center', background:'#f8fafc', borderRadius:'8px'}}>
+								No pending client requests at the moment.
+							</p>
+						)}
 									</div>
 								)}
 
@@ -706,8 +668,8 @@ export default function HRDashboard(){
 																<div>
 																	<h4 className="item-title" style={{margin: '0 0 4px 0'}}>{team.name}</h4>
 																	<div className="item-meta">
-																		<span>ğŸ‘¥ {team.members ? team.members.length : 0} Members</span>
-																		{team.manager && <span>ğŸ‘” Manager: {team.manager.name || team.manager.email}</span>}
+																		<span>=ƒæÑ {team.members ? team.members.length : 0} Members</span>
+																		{team.manager && <span>=ƒæö Manager: {team.manager.name || team.manager.email}</span>}
 																	</div>
 																</div>
 																<div style={{textAlign: 'right'}}>
@@ -792,9 +754,9 @@ export default function HRDashboard(){
 																	<div style={{flex: 1}}>
 																		<h4 className="item-title" style={{margin: '0 0 8px 0'}}>{task.title}</h4>
 																		<div className="item-meta">
-																			<span>ğŸ‘” {formatManagerName(task)}</span>
-																			{task.assignedTeam && <span>ğŸ‘¥ {task.assignedTeam.name}</span>}
-																			{task.assignedTo && <span>ğŸ‘¤ {task.assignedTo.name || task.assignedTo.email}</span>}
+																			<span>=ƒæö {formatManagerName(task)}</span>
+																			{task.assignedTeam && <span>=ƒæÑ {task.assignedTeam.name}</span>}
+																			{task.assignedTo && <span>=ƒæñ {task.assignedTo.name || task.assignedTo.email}</span>}
 																		</div>
 																	</div>
 																	<div style={{textAlign: 'right'}}>
@@ -831,8 +793,8 @@ export default function HRDashboard(){
 																</div>
 
 																<div style={{display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#64748b'}}>
-																	<span>ğŸ“… Deadline: {formatDeadline(task.deadline)}</span>
-																	<span>ğŸ”„ {task.status}</span>
+																	<span>=ƒôà Deadline: {formatDeadline(task.deadline)}</span>
+																	<span>=ƒöä {task.status}</span>
 																</div>
 															</div>
 														</div>
@@ -866,14 +828,14 @@ export default function HRDashboard(){
 															</div>
 															{task.description && <p className="help" style={{marginTop: 8, marginBottom: 0}}>{task.description}</p>}
 															<div className="item-meta" style={{marginTop: 12}}>
-																<span>ğŸ‘” Manager: {formatManagerName(task)}</span>
-																{task.assignedTeam && <span>ğŸ‘¥ Team: {task.assignedTeam.name}</span>}
-																<span>ğŸ“… Deadline: {formatDeadline(task.deadline)}</span>
+																<span>=ƒæö Manager: {formatManagerName(task)}</span>
+																{task.assignedTeam && <span>=ƒæÑ Team: {task.assignedTeam.name}</span>}
+																<span>=ƒôà Deadline: {formatDeadline(task.deadline)}</span>
 															</div>
 															{Array.isArray(task.attachments) && task.attachments.length > 0 && (
 																<details style={{marginTop: 12, padding: 12, background: '#f8fafc', borderRadius: 8}}>
 																	<summary style={{cursor: 'pointer', fontWeight: 600, color: '#475569'}}>
-																		ğŸ“ View Deliverables ({task.attachments.length} files)
+																		=ƒôÄ View Deliverables ({task.attachments.length} files)
 																	</summary>
 																	<ul style={{marginTop: 8, paddingLeft: 20}}>
 																		{task.attachments.map(file => (
@@ -897,7 +859,7 @@ export default function HRDashboard(){
 																onClick={()=>handleSendToClient(task._id)} 
 																disabled={isSending}
 															>
-																{isSending ? 'Sending to Client...' : 'âœ“ Approve & Send to Client'}
+																{isSending ? 'Sending to Client...' : 'G£ô Approve & Send to Client'}
 															</button>
 														</div>
 													)
@@ -938,6 +900,15 @@ export default function HRDashboard(){
 									</div>
 								)}
 
+								{/* PASSWORD REQUESTS VIEW */}
+								{activeView === 'password-requests' && (
+									<div className="dashboard-section">
+										<div className="dashboard-section-header">
+											<h3 className="dashboard-section-title">Password Reset Requests</h3>
+										</div>
+										<PasswordResetRequests userRole="hr" />
+									</div>
+								)}
 
 								{/* SETTINGS VIEW */}
 								{activeView === 'settings' && (
@@ -963,74 +934,6 @@ export default function HRDashboard(){
 					</div>
 				</div>
 			</div>
-
-			{/* Manager Modal */}
-			{showManagerForm && (
-				<div className="modal-overlay" onClick={() => {
-					setShowManagerForm(false)
-					setManagerForm(emptyManagerForm)
-					setEditingManagerId(null)
-				}}>
-					<div className="modal-content" onClick={(e) => e.stopPropagation()}>
-						<div className="modal-header">
-							<h3 className="modal-title">{editingManagerId ? 'Edit Manager' : 'Create New Manager'}</h3>
-							<button 
-								className="modal-close" 
-								onClick={() => {
-									setShowManagerForm(false)
-									setManagerForm(emptyManagerForm)
-									setEditingManagerId(null)
-								}}
-							>
-								Ã—
-							</button>
-						</div>
-						<form onSubmit={handleManagerCreate}>
-							<div className="modal-body">
-								<div className="form">
-									<label>Name
-										<input value={managerForm.name} onChange={e => setManagerForm(prev => ({...prev, name: e.target.value}))} required />
-									</label>
-									<label>Email
-										<input 
-											type="email" 
-											value={managerForm.email} 
-											onChange={e => setManagerForm(prev => ({...prev, email: e.target.value}))} 
-											required 
-											disabled={editingManagerId !== null}
-											style={{opacity: editingManagerId ? 0.6 : 1}}
-										/>
-										{editingManagerId && <div style={{marginTop: 4, fontSize: 12, color: 'var(--muted)'}}>Email cannot be changed</div>}
-									</label>
-									<label>Password {editingManagerId && '(leave blank to keep current)'}
-										<input 
-											type="password" 
-											value={managerForm.password} 
-											onChange={e => setManagerForm(prev => ({...prev, password: e.target.value}))} 
-											required={!editingManagerId} 
-										/>
-									</label>
-								</div>
-							</div>
-							<div className="modal-footer">
-								<button 
-									type="button" 
-									className="btn btn-outline" 
-									onClick={() => {
-										setShowManagerForm(false)
-										setManagerForm(emptyManagerForm)
-										setEditingManagerId(null)
-									}}
-								>
-									Cancel
-								</button>
-								<button className="btn" disabled={submittingManager}>
-									{submittingManager ? 'Saving...' : (editingManagerId ? 'Update Manager' : 'Create Manager')}
-								</button>
-							</div>
-						</form>
-					</div>
-				</div>
-			)}
-		</>
-	)}
+		</div>
+	)
+}

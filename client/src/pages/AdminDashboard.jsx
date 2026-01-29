@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { apiFetch, clearSession } from '../api'
 import ProfileSettings from '../components/ProfileSettings'
 import ChatMessages from '../components/ChatMessages'
-import PasswordResetRequests from '../components/PasswordResetRequests'
 import UserManagement from '../components/UserManagement'
 
 const AUTO_REFRESH_INTERVAL = 30000
@@ -311,16 +310,6 @@ export default function AdminDashboard(){
 				</div>
 			)
 
-		case 'password-requests':
-			return (
-				<div className="admin-view">
-					<div className="admin-view-header">
-						<h2>Password Reset Requests</h2>
-					</div>
-					<PasswordResetRequests userRole="admin" />
-				</div>
-			)
-
 		case 'user-management':
 			return (
 				<div className="admin-view">
@@ -609,81 +598,241 @@ export default function AdminDashboard(){
 		}
 	}
 
+	// Dropdown states
+	const [showManageDropdown, setShowManageDropdown] = useState(false)
+	const [showUsersDropdown, setShowUsersDropdown] = useState(false)
+	const [showProfileMenu, setShowProfileMenu] = useState(false)
+
+	// Close dropdowns when clicking outside
+	useEffect(() => {
+		const handleClickOutside = (e) => {
+			if (!e.target.closest('.admin-nav-dropdown') && !e.target.closest('.floating-profile-wrapper')) {
+				setShowManageDropdown(false)
+				setShowUsersDropdown(false)
+				setShowProfileMenu(false)
+			}
+		}
+		document.addEventListener('click', handleClickOutside)
+		return () => document.removeEventListener('click', handleClickOutside)
+	}, [])
+
 	return (
 		<div className="admin-dashboard-fullscreen">
-			<div className="admin-header-row">
-				<div className="admin-top-bar">
-					<div className="admin-brand">
-						<div className="brand-logo">T</div>
-						<div className="brand-text">
-							<h2>Admin Dashboard</h2>
+			{/* Glass-morphism Header */}
+			<header className="admin-glass-header">
+				<div className="admin-glass-header-content">
+					{/* Left - Title */}
+					<div className="admin-header-left">
+						<h1 className="admin-dashboard-title">Admin Dashboard</h1>
+					</div>
+
+					{/* Center - Navigation */}
+					<nav className="admin-header-nav">
+						<button 
+							className={`admin-nav-btn ${activeView === 'overview' ? 'active' : ''}`}
+							onClick={() => setActiveView('overview')}
+						>
+							<span className="nav-icon">🏠</span>
+							<span>Dashboard</span>
+						</button>
+
+						{/* Manage Dropdown */}
+						<div 
+							className="admin-nav-dropdown"
+							onMouseEnter={() => setShowManageDropdown(true)}
+							onMouseLeave={() => setShowManageDropdown(false)}
+						>
+							<button className="admin-nav-btn">
+								<span className="nav-icon">⚙️</span>
+								<span>Manage</span>
+								<span className="dropdown-arrow">▼</span>
+							</button>
+							{showManageDropdown && (
+								<div className="admin-dropdown-menu">
+									<button 
+										className="dropdown-item"
+										onClick={() => {
+											setActiveView('hrs')
+											setShowManageDropdown(false)
+										}}
+									>
+										<span className="dropdown-icon">👥</span>
+										<span>Manage HRs</span>
+									</button>
+									<button 
+										className="dropdown-item"
+										onClick={() => {
+											setActiveView('user-management')
+											setShowManageDropdown(false)
+										}}
+									>
+										<span className="dropdown-icon">👤</span>
+										<span>User Management</span>
+									</button>
+									<button 
+										className="dropdown-item"
+										onClick={() => {
+											setActiveView('settings')
+											setShowManageDropdown(false)
+										}}
+									>
+										<span className="dropdown-icon">⚙️</span>
+										<span>Settings</span>
+									</button>
+								</div>
+							)}
 						</div>
-					</div>
-				</div>
-				<div className="admin-header">
-					<div className="admin-welcome-inline">
-						<h1>Welcome back, {displayName}! 👋</h1>
-						<p>Here's what's happening with your platform today</p>
-					</div>
-					<button className="admin-logout-btn" onClick={logout}>Logout</button>
-				</div>
-			</div>
-			<div className="admin-layout-wrapper">
-				<div className="admin-sidebar">
-					<nav className="sidebar-nav">
-						<button className={`sidebar-item ${activeView === 'overview' ? 'active' : ''}`} onClick={() => setActiveView('overview')}>
-							<span className="sidebar-icon">🏠</span>
-							<span>Overview</span>
-						</button>
-						<button className={`sidebar-item ${activeView === 'hrs' ? 'active' : ''}`} onClick={() => setActiveView('hrs')}>
-							<span className="sidebar-icon">👥</span>
-							<span>HR's</span>
-						</button>
-						<button className={`sidebar-item ${activeView === 'managers' ? 'active' : ''}`} onClick={() => setActiveView('managers')}>
-						<span className="sidebar-icon">👔</span>
-						<span>Managers</span>
-					</button>
-					<button className={`sidebar-item ${activeView === 'messages' ? 'active' : ''}`} onClick={() => setActiveView('messages')} style={{ position: 'relative' }}>
-						<span className="sidebar-icon">💬</span>
-						<span>Messages</span>
-						{unreadMessages > 0 && (
-							<span className="chat-icon-btn-badge" style={{ position: 'absolute', top: '8px', right: '8px' }}>
-								{unreadMessages}
-							</span>
-						)}
-						</button>
-						<button className={`sidebar-item ${activeView === 'teams' ? 'active' : ''}`} onClick={() => setActiveView('teams')}>
-							<span className="sidebar-icon">🤝</span>
-							<span>Teams</span>
-						</button>
-						<button className={`sidebar-item ${activeView === 'clients' ? 'active' : ''}`} onClick={() => setActiveView('clients')}>
-							<span className="sidebar-icon">💼</span>
-							<span>Clients</span>
-						</button>
-						<button className={`sidebar-item ${activeView === 'tasks' ? 'active' : ''}`} onClick={() => setActiveView('tasks')}>
-							<span className="sidebar-icon">✓</span>
-							<span>Tasks</span>
-						</button>
-						<button className={`sidebar-item ${activeView === 'profile' ? 'active' : ''}`} onClick={() => setActiveView('profile')}>
-							<span className="sidebar-icon">👤</span>
-							<span>Profile</span>
-						</button>
-						<button className={`sidebar-item ${activeView === 'password-requests' ? 'active' : ''}`} onClick={() => setActiveView('password-requests')}>
-							<span className="sidebar-icon">🔑</span>
-							<span>Password Requests</span>
-						</button>					<button className={`sidebar-item ${activeView === 'user-management' ? 'active' : ''}`} onClick={() => setActiveView('user-management')}>
-						<span className="sidebar-icon">👥</span>
-						<span>User Management</span>
-					</button>						<button className={`sidebar-item ${activeView === 'settings' ? 'active' : ''}`} onClick={() => setActiveView('settings')}>
-							<span className="sidebar-icon">⚙️</span>
-							<span>Settings</span>
+
+						{/* Users Dropdown */}
+						<div 
+							className="admin-nav-dropdown"
+							onMouseEnter={() => setShowUsersDropdown(true)}
+							onMouseLeave={() => setShowUsersDropdown(false)}
+						>
+							<button className="admin-nav-btn">
+								<span className="nav-icon">👥</span>
+								<span>Users</span>
+								<span className="dropdown-arrow">▼</span>
+							</button>
+							{showUsersDropdown && (
+								<div className="admin-dropdown-menu">
+									<button 
+										className="dropdown-item"
+										onClick={() => {
+											setActiveView('hrs')
+											setShowUsersDropdown(false)
+										}}
+									>
+										<span className="dropdown-icon">👥</span>
+										<span>View HRs</span>
+									</button>
+									<button 
+										className="dropdown-item"
+										onClick={() => {
+											setActiveView('managers')
+											setShowUsersDropdown(false)
+										}}
+									>
+										<span className="dropdown-icon">👔</span>
+										<span>View Managers</span>
+									</button>
+									<button 
+										className="dropdown-item"
+										onClick={() => {
+											setActiveView('clients')
+											setShowUsersDropdown(false)
+										}}
+									>
+										<span className="dropdown-icon">💼</span>
+										<span>View Clients</span>
+									</button>
+									<button 
+										className="dropdown-item"
+										onClick={() => {
+											setActiveView('teams')
+											setShowUsersDropdown(false)
+										}}
+									>
+										<span className="dropdown-icon">🤝</span>
+										<span>View Teams</span>
+									</button>
+									<button 
+										className="dropdown-item"
+										onClick={() => {
+											setActiveView('tasks')
+											setShowUsersDropdown(false)
+										}}
+									>
+										<span className="dropdown-icon">✓</span>
+										<span>View Tasks</span>
+									</button>
+								</div>
+							)}
+						</div>
+
+						{/* Messages Button */}
+						<button 
+							className={`admin-nav-btn ${activeView === 'messages' ? 'active' : ''}`}
+							onClick={() => setActiveView('messages')}
+							style={{ position: 'relative' }}
+						>
+							<span className="nav-icon">💬</span>
+							<span>Messages</span>
+							{unreadMessages > 0 && (
+								<span className="header-badge">{unreadMessages}</span>
+							)}
 						</button>
 					</nav>
-				</div>
-				<div className="admin-main">
-					<div className="admin-content">
-						{profile ? renderContent() : null}
+
+					{/* Right - Logout Button */}
+					<div className="admin-header-right">
+						<button className="admin-logout-btn" onClick={logout}>
+							<span className="logout-icon">🚪</span>
+							<span>Logout</span>
+						</button>
 					</div>
+				</div>
+			</header>
+
+			{/* Main Content Area */}
+			<div className="admin-main-wrapper">
+				{/* Floating Profile Button */}
+				<div className="floating-profile-wrapper">
+					<button 
+						className="floating-profile-btn"
+						onClick={() => setShowProfileMenu(!showProfileMenu)}
+					>
+						<div className="floating-avatar">
+							{displayName.charAt(0).toUpperCase()}
+						</div>
+					</button>
+					
+					{showProfileMenu && (
+						<div className="floating-profile-menu">
+							<div className="profile-menu-header">
+								<div className="profile-menu-avatar">
+									{displayName.charAt(0).toUpperCase()}
+								</div>
+								<div className="profile-menu-info">
+									<div className="profile-menu-name">{displayName}</div>
+									<div className="profile-menu-role">Administrator</div>
+								</div>
+							</div>
+							<div className="profile-menu-divider"></div>
+							<button 
+								className="profile-menu-item"
+								onClick={() => {
+									setActiveView('profile')
+									setShowProfileMenu(false)
+								}}
+							>
+								<span className="menu-icon">👤</span>
+								<span>Profile</span>
+							</button>
+							<button 
+								className="profile-menu-item"
+								onClick={() => {
+									setActiveView('settings')
+									setShowProfileMenu(false)
+								}}
+							>
+								<span className="menu-icon">⚙️</span>
+								<span>Settings</span>
+							</button>
+							<div className="profile-menu-divider"></div>
+							<button 
+								className="profile-menu-item logout"
+								onClick={logout}
+							>
+								<span className="menu-icon">🚪</span>
+								<span>Logout</span>
+							</button>
+						</div>
+					)}
+				</div>
+				
+				<div className="admin-content">
+					{profile ? renderContent() : null}
 				</div>
 			</div>
 
