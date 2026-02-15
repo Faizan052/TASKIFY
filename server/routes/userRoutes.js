@@ -9,7 +9,7 @@ const Notification = require('../models/Notification');
 const OTP = require('../models/OTP');
 const { generateOTP, sendOTPEmail } = require('../utils/emailService');
 const { trySendWelcomeEmail } = require('../utils/emailNotifications');
-const { analyzeProjectRequest } = require('../utils/aiService');
+const { analyzeRequestFeasibility } = require('../utils/feasibilityService');
 const { validateEmail } = require('../utils/validation');
 const { normalizeEmail, assertUniqueIdentity } = require('../utils/identity');
 const upload = require('../middleware/upload');
@@ -656,39 +656,34 @@ router.put('/tasks/:id/status', protect, asyncHandler(async (req, res) => {
     }
 }));
 
-// Client submits a new task request
-// AI Analysis for document feasibility check
 router.post('/analyze-request', protect, roleRequired('client'), upload.single('document'), asyncHandler(async (req, res) => {
     const { deadline, category, title, description } = req.body;
-    
+
     if (!req.file) {
         res.status(400);
-        throw new Error('Document file is required for analysis');
+        throw new Error('Document file is required for feasibility check');
     }
 
     if (!deadline) {
         res.status(400);
-        throw new Error('Deadline is required for analysis');
+        throw new Error('Deadline is required for feasibility check');
     }
+
     const deadlineDate = new Date(deadline);
     if (Number.isNaN(deadlineDate.getTime())) {
         res.status(400);
-        throw new Error('Provide a valid deadline for analysis');
+        throw new Error('Provide a valid deadline for feasibility check');
     }
 
-    try {
-        const aiResult = await analyzeProjectRequest({
-            deadline,
-            category,
-            title,
-            description,
-            file: req.file
-        });
-        res.json(aiResult);
-    } catch (analysisError) {
-        res.status(502);
-        throw new Error(`AI analysis failed: ${analysisError.message}`);
-    }
+    const result = await analyzeRequestFeasibility({
+        deadline,
+        category,
+        title,
+        description,
+        file: req.file
+    });
+
+    res.json(result);
 }));
 
 router.post('/tasks', protect, roleRequired('client'), upload.array('attachments', 8), asyncHandler(async (req, res) => {
@@ -697,7 +692,7 @@ router.post('/tasks', protect, roleRequired('client'), upload.array('attachments
         throw new Error('Admin cannot access user routes');
     }
 
-    const { title, description, deadline, category, aiAnalysis } = req.body;
+    const { title, description, deadline, category } = req.body;
     if (!title || !description || !deadline) {
         res.status(400);
         throw new Error('Title, description, and deadline are required');
@@ -728,15 +723,6 @@ router.post('/tasks', protect, roleRequired('client'), upload.array('attachments
         createdByModel: 'User',
         createdByRole: req.user.role
     });
-
-    // Store AI analysis if provided
-    if (aiAnalysis) {
-        try {
-            task.aiAnalysis = typeof aiAnalysis === 'string' ? JSON.parse(aiAnalysis) : aiAnalysis;
-        } catch (e) {
-            // Ignore parsing errors
-        }
-    }
 
     setTaskState(task, {
         status: STATUS.CLIENT_REQUESTED,

@@ -83,10 +83,6 @@ const taskSchema = new mongoose.Schema({
         type: Date,
         required: true
     },
-    aiAnalysis: {
-        type: mongoose.Schema.Types.Mixed,
-        default: null
-    },
     status: {
         type: String,
         enum: [
