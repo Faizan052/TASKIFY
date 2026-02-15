@@ -10,6 +10,15 @@ import DashboardWelcomeBanner from '../components/DashboardWelcomeBanner'
 const emptyManagerForm = { name: '', email: '', password: '', categories: [] }
 const emptyProfileForm = { name: '', phone: '', department: '', profilePicture: null }
 const AUTO_REFRESH_INTERVAL = 30000
+const ACTIVE_MANAGER_STATUSES = [
+	'Design In Progress',
+	'Design Completed - Pending Manager Review',
+	'Development In Progress',
+	'Development Completed - Pending Manager Review',
+	'Testing In Progress',
+	'Testing Completed - Pending Manager Final Review',
+	'Changes Requested'
+]
 
 export default function HRDashboard(){
 	const nav = useNavigate()
@@ -33,6 +42,9 @@ export default function HRDashboard(){
 	const [profileForm, setProfileForm] = useState(emptyProfileForm)
 	const [_updatingProfile, setUpdatingProfile] = useState(false)
 	const [deletingManagerId, setDeletingManagerId] = useState(null)
+	const [_registeredUsers, setRegisteredUsers] = useState([])
+	const [categoryStats, setCategoryStats] = useState({})
+	const [showManagerCategoryModal, setShowManagerCategoryModal] = useState(false)
 
 	const teamsByManager = useMemo(() => {
 		if (!overview) return {}
@@ -57,6 +69,54 @@ export default function HRDashboard(){
 	const awaitingHrReview = useMemo(() => tasks.filter(task => task.status === 'Awaiting HR Review'), [tasks])
 	const awaitingClientReview = useMemo(() => tasks.filter(task => task.status === 'Awaiting Client Review'), [tasks])
 	const completedTasks = useMemo(() => tasks.filter(task => task.status === 'Completed'), [tasks])
+
+	const managerStatusMap = useMemo(() => {
+		const map = {}
+		;(overview?.managers || []).forEach((manager) => {
+			map[manager._id] = { activeCount: 0, pendingCount: 0 }
+		})
+
+		tasks.forEach((task) => {
+			const managerId = task.manager?._id || (task.assignedTo?.role === 'manager' ? task.assignedTo._id : null)
+			if (!managerId) return
+			if (!map[managerId]) {
+				map[managerId] = { activeCount: 0, pendingCount: 0 }
+			}
+			if (ACTIVE_MANAGER_STATUSES.includes(task.status)) {
+				map[managerId].activeCount += 1
+			} else if (task.status === 'Awaiting Manager Assignment') {
+				map[managerId].pendingCount += 1
+			}
+		})
+
+		return map
+	}, [overview, tasks])
+
+	const getManagerStatus = (managerId) => {
+		const state = managerStatusMap[managerId] || { activeCount: 0, pendingCount: 0 }
+		if (state.activeCount > 0) {
+			return {
+				label: 'Busy in a Project',
+				color: '#b45309',
+				background: '#fef3c7',
+				border: '#f59e0b'
+			}
+		}
+		if (state.pendingCount > 0) {
+			return {
+				label: 'Pending Assignment',
+				color: '#1d4ed8',
+				background: '#dbeafe',
+				border: '#60a5fa'
+			}
+		}
+		return {
+			label: 'Free',
+			color: '#166534',
+			background: '#dcfce7',
+			border: '#4ade80'
+		}
+	}
 
 	const formatManagerName = (task) => {
 		if (task.manager) return task.manager.name || task.manager.email || 'Manager'
@@ -94,7 +154,36 @@ export default function HRDashboard(){
 		nav('/user/login')
 	}
 
+	const loadRegisteredUsers = async () => {
+		try {
+			const users = await apiFetch('/api/hr/users')
+			setRegisteredUsers(users)
+			
+			// Calculate category statistics
+			const stats = {}
+			CATEGORY_OPTIONS.forEach(opt => {
+				stats[opt.value] = 0
+			})
+			
+			users.forEach(user => {
+				const userCategories = Array.isArray(user.categories) && user.categories.length > 0 
+					? user.categories 
+					: (user.category ? [user.category] : [])
+				userCategories.forEach(cat => {
+					if (stats[cat] !== undefined) {
+						stats[cat] += 1
+					}
+				})
+			})
+			
+			setCategoryStats(stats)
+		} catch(err) {
+			console.error('Failed to load registered users:', err)
+		}
+	}
+
 	const handleEditManager = (manager) => {
+		loadRegisteredUsers()
 		const managerCategories = Array.isArray(manager.categories) && manager.categories.length > 0
 			? manager.categories
 			: (manager.category ? [manager.category] : [])
@@ -239,6 +328,16 @@ export default function HRDashboard(){
 			await Promise.all([refreshTasks(), refreshOverview()])
 		}catch(err){ setError(err.message) }
 		finally{ setAssigningTaskId('') }
+	}
+
+	const getSelectedManagerLabel = (task) => {
+		const selection = assignmentSelections[task._id] || {}
+		const managerId = selection.managerId || ''
+		if (!managerId) return null
+		const selectedManager = (overview?.managers || []).find(manager => manager._id === managerId)
+		if (!selectedManager) return null
+		const status = getManagerStatus(selectedManager._id)
+		return `${selectedManager.name || selectedManager.email} • ${status.label}`
 	}
 
 	const handleSendToClient = async (taskId) => {
@@ -631,6 +730,7 @@ export default function HRDashboard(){
 											<button
 												className="btn"
 												onClick={() => {
+													loadRegisteredUsers()
 													setEditingManagerId(null)
 													setManagerForm(emptyManagerForm)
 													setShowManagerForm(true)
@@ -648,6 +748,22 @@ export default function HRDashboard(){
 																<h4 className="item-title" style={{margin: '0 0 4px 0'}}>{manager.name}</h4>
 																<div className="item-meta">
 																	<span>📧 {manager.email}</span>
+																	{(() => {
+																		const status = getManagerStatus(manager._id)
+																		return (
+																			<span style={{
+																				padding: '2px 8px',
+																				borderRadius: 999,
+																				fontSize: 11,
+																				fontWeight: 700,
+																				color: status.color,
+																				background: status.background,
+																				border: `1px solid ${status.border}`
+																			}}>
+																				{status.label}
+																			</span>
+																		)
+																	})()}
 																	<span>🏷️ {formatCategories(getUserCategories(manager))}</span>
 																	{teamsByManager[manager._id] && (
 																		<span>👥 {teamsByManager[manager._id].length} {teamsByManager[manager._id].length === 1 ? 'team' : 'teams'}</span>
@@ -706,13 +822,18 @@ export default function HRDashboard(){
 															<select value={assignment.managerId || ''} onChange={e=>setAssignmentSelection(task._id, e.target.value)}>
 																<option value="">Select manager</option>
 																{availableManagers.map(manager => (
-																	<option key={manager._id} value={manager._id}>{manager.name} ({formatCategories(getUserCategories(manager))})</option>
+																				<option key={manager._id} value={manager._id}>{manager.name} — {getManagerStatus(manager._id).label} ({formatCategories(getUserCategories(manager))})</option>
 																))}
 															</select>
 															<button className="btn small" onClick={()=>handleAssignTask(task)} disabled={assigningTaskId === task._id || availableManagers.length === 0}>
 																{assigningTaskId === task._id ? 'Assigning...' : 'Assign'}
 															</button>
 														</div>
+																	{getSelectedManagerLabel(task) ? (
+																		<div style={{ marginTop: 6, fontSize: 12, color: '#475569' }}>
+																			Selected: {getSelectedManagerLabel(task)}
+																		</div>
+																	) : null}
 														{availableManagers.length === 0 && (
 															<div style={{marginTop: 6, fontSize: 12, color: '#ef4444'}}>
 																No managers found for category {formatCategory(task.category)}.
@@ -1057,24 +1178,44 @@ export default function HRDashboard(){
 									<label>Categories (multiple)
 										<div style={{
 											marginTop: 8,
-											border: '1px solid #d1d5db',
+											marginBottom: 8,
+											padding: '10px 14px',
+											background: '#f0f9ff',
+											border: '1px solid #bae6fd',
 											borderRadius: 8,
-											padding: 10,
-											display: 'grid',
-											gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-											gap: 8
+											fontSize: 13,
+											color: '#0369a1'
 										}}>
-											{CATEGORY_OPTIONS.map(option => (
-												<label key={option.value} style={{display: 'flex', alignItems: 'center', gap: 8, fontWeight: 500}}>
-													<input
-														type="checkbox"
-														checked={(managerForm.categories || []).includes(option.value)}
-														onChange={() => toggleManagerCategory(option.value)}
-													/>
-													{option.label}
-												</label>
-											))}
+											💡 Select categories this manager will supervise. Categories with more available users are highlighted.
 										</div>
+										<button
+											type="button"
+											onClick={() => setShowManagerCategoryModal(true)}
+											style={{
+												width: '100%',
+												padding: '14px 16px',
+												border: '2px solid #e2e8f0',
+												borderRadius: 12,
+												background: 'white',
+												cursor: 'pointer',
+												display: 'flex',
+												alignItems: 'center',
+												justifyContent: 'space-between',
+												fontSize: 14,
+												fontWeight: 500,
+												transition: 'all 0.2s',
+												marginTop: 8
+											}}
+											onMouseEnter={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
+											onMouseLeave={(e) => e.currentTarget.style.borderColor = '#e2e8f0'}
+										>
+											<span style={{ color: (managerForm.categories || []).length > 0 ? '#1e293b' : '#94a3b8' }}>
+												{(managerForm.categories || []).length > 0 
+													? `${(managerForm.categories || []).length} ${(managerForm.categories || []).length === 1 ? 'category' : 'categories'} selected`
+													: 'Click to select categories'}
+											</span>
+											<span style={{ fontSize: 20, color: '#64748b' }}>+</span>
+										</button>
 										<div style={{marginTop: 6, fontSize: 12, color: '#475569'}}>
 											Selected: {formatCategories(managerForm.categories || [])}
 										</div>
@@ -1098,6 +1239,245 @@ export default function HRDashboard(){
 								</button>
 							</div>
 						</form>
+					</div>
+				</div>
+			)}
+
+			{/* Category Selection Modal */}
+			{showManagerCategoryModal && (
+				<div 
+					style={{
+						position: 'fixed',
+						top: 0,
+						left: 0,
+						right: 0,
+						bottom: 0,
+						background: 'rgba(0, 0, 0, 0.6)',
+						display: 'flex',
+						alignItems: 'center',
+						justifyContent: 'center',
+						zIndex: 10000,
+						padding: 20
+					}}
+					onClick={() => setShowManagerCategoryModal(false)}
+				>
+					<div 
+						style={{
+							background: 'white',
+							borderRadius: 16,
+							padding: 32,
+							maxWidth: 500,
+							width: '100%',
+							maxHeight: '80vh',
+							overflow: 'auto',
+							position: 'relative',
+							boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)'
+						}}
+						onClick={(e) => e.stopPropagation()}
+					>
+						<button
+							onClick={() => setShowManagerCategoryModal(false)}
+							style={{
+								position: 'absolute',
+								top: -8,
+								right: -8,
+								width: 32,
+								height: 32,
+								borderRadius: '50%',
+								border: 'none',
+								background: '#f1f5f9',
+								cursor: 'pointer',
+								display: 'flex',
+								alignItems: 'center',
+								justifyContent: 'center',
+								fontSize: 18,
+								color: '#64748b',
+								boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+								transition: 'all 0.2s'
+							}}
+							onMouseEnter={(e) => {
+								e.currentTarget.style.background = '#e2e8f0'
+								e.currentTarget.style.color = '#334155'
+							}}
+							onMouseLeave={(e) => {
+								e.currentTarget.style.background = '#f1f5f9'
+								e.currentTarget.style.color = '#64748b'
+							}}
+						>
+							×
+						</button>
+
+						<h2 style={{ 
+							fontSize: 24, 
+							fontWeight: 700, 
+							marginBottom: 8, 
+							color: '#1e293b' 
+						}}>
+							Select Categories
+						</h2>
+						<p style={{ 
+							fontSize: 14, 
+							color: '#64748b', 
+							marginBottom: 24 
+						}}>
+							Choose the categories this manager will supervise. Categories with available users are highlighted.
+						</p>
+
+						<div style={{
+							display: 'grid',
+							gridTemplateColumns: 'repeat(2, 1fr)',
+							gap: 12
+						}}>
+							{CATEGORY_OPTIONS.map(option => {
+								const isSelected = (managerForm.categories || []).includes(option.value)
+								const userCount = categoryStats[option.value] || 0
+								const hasUsers = userCount > 0
+
+								return (
+									<div
+										key={option.value}
+										onClick={() => toggleManagerCategory(option.value)}
+										style={{
+											padding: 16,
+											border: `2px solid ${isSelected ? '#667eea' : '#e2e8f0'}`,
+											borderRadius: 12,
+											cursor: 'pointer',
+											transition: 'all 0.2s',
+											background: isSelected 
+												? 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)' 
+												: hasUsers 
+												? '#f0fdf4' 
+												: 'transparent',
+											position: 'relative'
+										}}
+									>
+										<div style={{ 
+											display: 'flex', 
+											alignItems: 'center', 
+											justifyContent: 'space-between',
+											marginBottom: hasUsers ? 8 : 0
+										}}>
+											<span style={{ 
+												fontSize: 14, 
+												fontWeight: 600, 
+												color: isSelected ? '#667eea' : '#1e293b' 
+											}}>
+												{option.label}
+											</span>
+											{isSelected && (
+												<div style={{
+													width: 20,
+													height: 20,
+													borderRadius: '50%',
+													background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+													display: 'flex',
+													alignItems: 'center',
+													justifyContent: 'center',
+													color: 'white',
+													fontSize: 12,
+													fontWeight: 700
+												}}>
+													✓
+												</div>
+											)}
+										</div>
+										{hasUsers && (
+											<div style={{
+												fontSize: 11,
+												fontWeight: 700,
+												color: '#16a34a',
+												background: '#dcfce7',
+												padding: '2px 6px',
+												borderRadius: 999,
+												display: 'inline-block'
+											}}>
+												{userCount} {userCount === 1 ? 'user' : 'users'}
+											</div>
+										)}
+									</div>
+								)
+							})}
+						</div>
+
+						<div style={{
+							marginTop: 24,
+							padding: (managerForm.categories || []).length > 0 ? '12px 16px' : '8px 16px',
+							background: (managerForm.categories || []).length > 0 
+								? 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)' 
+								: '#f8fafc',
+							borderRadius: 10,
+							border: `1px solid ${(managerForm.categories || []).length > 0 ? '#c7d2fe' : '#e2e8f0'}`,
+							fontSize: 14,
+							color: '#475569',
+							textAlign: 'center'
+						}}>
+							{(managerForm.categories || []).length > 0 
+								? `${(managerForm.categories || []).length} ${(managerForm.categories || []).length === 1 ? 'category' : 'categories'} selected`
+								: 'No categories selected'}
+						</div>
+
+						<div style={{ 
+							display: 'flex', 
+							gap: 12, 
+							marginTop: 24 
+						}}>
+							<button
+								onClick={() => setShowManagerCategoryModal(false)}
+								style={{
+									flex: 1,
+									padding: '12px 16px',
+									border: '2px solid #e2e8f0',
+									borderRadius: 10,
+									background: 'white',
+									fontSize: 14,
+									fontWeight: 600,
+									color: '#64748b',
+									cursor: 'pointer',
+									transition: 'all 0.2s'
+								}}
+								onMouseEnter={(e) => {
+									e.currentTarget.style.borderColor = '#cbd5e1'
+									e.currentTarget.style.color = '#334155'
+								}}
+								onMouseLeave={(e) => {
+									e.currentTarget.style.borderColor = '#e2e8f0'
+									e.currentTarget.style.color = '#64748b'
+								}}
+							>
+								Cancel
+							</button>
+							<button
+								onClick={() => setShowManagerCategoryModal(false)}
+								disabled={(managerForm.categories || []).length === 0}
+								style={{
+									flex: 1,
+									padding: '12px 16px',
+									border: 'none',
+									borderRadius: 10,
+									background: (managerForm.categories || []).length > 0 
+										? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' 
+										: '#e2e8f0',
+									fontSize: 14,
+									fontWeight: 600,
+									color: 'white',
+									cursor: (managerForm.categories || []).length > 0 ? 'pointer' : 'not-allowed',
+									transition: 'all 0.2s',
+									opacity: (managerForm.categories || []).length > 0 ? 1 : 0.6
+								}}
+								onMouseEnter={(e) => {
+									if ((managerForm.categories || []).length > 0) {
+										e.currentTarget.style.transform = 'translateY(-1px)'
+										e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)'
+									}
+								}}
+								onMouseLeave={(e) => {
+									e.currentTarget.style.transform = 'translateY(0)'
+									e.currentTarget.style.boxShadow = 'none'
+								}}
+							>
+								Confirm
+							</button>
+						</div>
 					</div>
 				</div>
 			)}

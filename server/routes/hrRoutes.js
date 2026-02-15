@@ -486,4 +486,26 @@ router.post('/reset-manager-password', protect, roleRequired('hr'), asyncHandler
     });
 }));
 
+// HR fetches all registered users (for dynamic manager creation/selection)
+router.get('/users', protect, roleRequired('hr'), asyncHandler(async (req, res) => {
+    const { role, category } = req.query;
+    
+    let query = {};
+    if (role) {
+        query.role = role;
+    }
+    if (category) {
+        query.$or = [
+            { categories: category },
+            { category: category }
+        ];
+    }
+    
+    const users = await User.find(query)
+        .select('_id name email role category categories')
+        .sort({ name: 1 });
+    
+    res.json(users);
+}));
+
 module.exports = router;

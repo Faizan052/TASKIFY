@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../api'
-import { isValidEmail, getPasswordRequirements, checkPasswordStrength, CATEGORY_OPTIONS, formatCategory, formatCategories } from '../utils/helpers'
+import { isValidEmail, getPasswordRequirements, checkPasswordStrength, CATEGORY_OPTIONS, formatCategory, formatCategories, formatRole } from '../utils/helpers'
 import Message from '../components/Message'
 import ForgotPassword from '../components/ForgotPassword'
 
@@ -102,6 +102,7 @@ export default function AuthSlider() {
     category: false
   })
   const [regPasswordFocused, setRegPasswordFocused] = useState(false)
+  const [showCategoryModal, setShowCategoryModal] = useState(false)
 
   // Common state
   const [loading, setLoading] = useState(false)
@@ -606,37 +607,48 @@ export default function AuthSlider() {
 
                 {ROLES_REQUIRING_CATEGORY.includes(role) && (
                   <>
-                    <div
+                    <button
+                      type="button"
+                      className="category-selector-btn"
+                      onClick={() => {
+                        setShowCategoryModal(true)
+                        setRegisterTouched((prev) => ({ ...prev, category: true }))
+                      }}
                       style={{
                         width: '100%',
                         marginTop: '10px',
-                        border: '1px solid #cbd5e1',
+                        padding: '14px 16px',
+                        border: categoryError ? '1px solid #ef4444' : '1px solid #cbd5e1',
                         borderRadius: '8px',
-                        padding: '10px',
-                        textAlign: 'left'
+                        background: 'white',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        fontSize: '14px',
+                        color: selectedCategories.length > 0 ? '#1e293b' : '#94a3b8',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        transition: 'all 0.2s ease',
+                        fontWeight: 500
                       }}
-                      onBlur={() => setRegisterTouched((prev) => ({ ...prev, category: true }))}
+                      onMouseEnter={(e) => {
+                        if (!categoryError) e.target.style.borderColor = '#667eea'
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!categoryError) e.target.style.borderColor = '#cbd5e1'
+                      }}
                     >
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#475569', marginBottom: '8px' }}>
-                        Select categories (multiple)
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
-                        {CATEGORY_OPTIONS.map((item) => (
-                          <label key={item.value} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#334155' }}>
-                            <input
-                              type="checkbox"
-                              checked={selectedCategories.includes(item.value)}
-                              onChange={() => toggleCategorySelection(item.value)}
-                            />
-                            {item.label}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
+                      <span>
+                        {selectedCategories.length > 0 
+                          ? `${selectedCategories.length} ${selectedCategories.length === 1 ? 'category' : 'categories'} selected`
+                          : 'Select categories (required)'}
+                      </span>
+                      <span style={{ fontSize: '18px', color: '#667eea' }}>+</span>
+                    </button>
                     {categoryError && <div className="validation-error">{categoryError}</div>}
                     {selectedCategories.length > 0 && (
-                      <div className="validation-success" style={{ textAlign: 'left' }}>
-                        Selected: {formatCategories(selectedCategories)}
+                      <div className="validation-success" style={{ textAlign: 'left', marginTop: '6px' }}>
+                        {formatCategories(selectedCategories)}
                       </div>
                     )}
                   </>
@@ -787,6 +799,272 @@ export default function AuthSlider() {
             setLoginError(null);
           }}
         />
+      )}
+
+      {/* Category Selection Modal */}
+      {showCategoryModal && (
+        <div 
+          className="modal-overlay"
+          onClick={() => setShowCategoryModal(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            padding: '20px',
+            animation: 'fadeIn 0.2s ease-out'
+          }}
+        >
+          <div 
+            className="category-modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'white',
+              borderRadius: '16px',
+              padding: '32px',
+              maxWidth: '500px',
+              width: '100%',
+              maxHeight: '80vh',
+              overflow: 'auto',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+              animation: 'slideUp 0.3s ease-out',
+              position: 'relative'
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{ marginBottom: '24px', position: 'relative' }}>
+              <button
+                onClick={() => setShowCategoryModal(false)}
+                style={{
+                  position: 'absolute',
+                  top: '-8px',
+                  right: '-8px',
+                  background: '#f1f5f9',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  fontSize: '20px',
+                  color: '#64748b',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = '#e2e8f0'
+                  e.target.style.color = '#334155'
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = '#f1f5f9'
+                  e.target.style.color = '#64748b'
+                }}
+              >
+                ×
+              </button>
+              <h2 style={{
+                margin: 0,
+                fontSize: '24px',
+                fontWeight: 700,
+                color: '#1e293b',
+                marginBottom: '8px'
+              }}>
+                Select Your Categories
+              </h2>
+              <p style={{
+                margin: 0,
+                fontSize: '14px',
+                color: '#64748b',
+                lineHeight: 1.5
+              }}>
+                Choose one or more specialties that match your skills as a {formatRole(role)}
+              </p>
+            </div>
+
+            {/* Category Grid */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: '12px',
+              marginBottom: '24px'
+            }}>
+              {CATEGORY_OPTIONS.map((item) => {
+                const isSelected = selectedCategories.includes(item.value)
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    onClick={() => toggleCategorySelection(item.value)}
+                    style={{
+                      padding: '16px',
+                      border: isSelected 
+                        ? '2px solid #667eea' 
+                        : '2px solid #e2e8f0',
+                      borderRadius: '12px',
+                      background: isSelected 
+                        ? 'linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.08))' 
+                        : 'white',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.2s ease',
+                      position: 'relative',
+                      overflow: 'hidden'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.borderColor = '#cbd5e1'
+                        e.currentTarget.style.background = '#f8fafc'
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.borderColor = '#e2e8f0'
+                        e.currentTarget.style.background = 'white'
+                      }
+                    }}
+                  >
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px'
+                    }}>
+                      <span style={{
+                        fontSize: '15px',
+                        fontWeight: 600,
+                        color: isSelected ? '#667eea' : '#334155'
+                      }}>
+                        {item.label}
+                      </span>
+                      {isSelected && (
+                        <span style={{
+                          width: '20px',
+                          height: '20px',
+                          borderRadius: '50%',
+                          background: 'linear-gradient(135deg, #667eea, #764ba2)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'white',
+                          fontSize: '12px',
+                          fontWeight: 700
+                        }}>
+                          ✓
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Selected Count */}
+            <div style={{
+              padding: '12px 16px',
+              background: selectedCategories.length > 0 
+                ? 'linear-gradient(135deg, rgba(102, 126, 234, 0.08), rgba(118, 75, 162, 0.05))' 
+                : '#f8fafc',
+              borderRadius: '10px',
+              marginBottom: '20px',
+              border: `1px solid ${selectedCategories.length > 0 ? 'rgba(102, 126, 234, 0.2)' : '#e2e8f0'}`
+            }}>
+              <div style={{
+                fontSize: '13px',
+                fontWeight: 600,
+                color: selectedCategories.length > 0 ? '#667eea' : '#64748b'
+              }}>
+                {selectedCategories.length > 0 
+                  ? `${selectedCategories.length} ${selectedCategories.length === 1 ? 'category' : 'categories'} selected`
+                  : 'No categories selected'}
+              </div>
+              {selectedCategories.length > 0 && (
+                <div style={{
+                  fontSize: '12px',
+                  color: '#64748b',
+                  marginTop: '4px'
+                }}>
+                  {formatCategories(selectedCategories)}
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{
+              display: 'flex',
+              gap: '12px'
+            }}>
+              <button
+                type="button"
+                onClick={() => setShowCategoryModal(false)}
+                style={{
+                  flex: 1,
+                  padding: '14px',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '10px',
+                  background: 'white',
+                  color: '#64748b',
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = '#f8fafc'
+                  e.target.style.borderColor = '#cbd5e1'
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = 'white'
+                  e.target.style.borderColor = '#e2e8f0'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCategoryModal(false)}
+                disabled={selectedCategories.length === 0}
+                style={{
+                  flex: 1,
+                  padding: '14px',
+                  border: 'none',
+                  borderRadius: '10px',
+                  background: selectedCategories.length > 0 
+                    ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' 
+                    : '#e2e8f0',
+                  color: 'white',
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  cursor: selectedCategories.length > 0 ? 'pointer' : 'not-allowed',
+                  transition: 'all 0.2s ease',
+                  boxShadow: selectedCategories.length > 0 
+                    ? '0 4px 12px rgba(102, 126, 234, 0.3)' 
+                    : 'none'
+                }}
+                onMouseEnter={(e) => {
+                  if (selectedCategories.length > 0) {
+                    e.target.style.transform = 'translateY(-2px)'
+                    e.target.style.boxShadow = '0 6px 16px rgba(102, 126, 234, 0.4)'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (selectedCategories.length > 0) {
+                    e.target.style.transform = 'translateY(0)'
+                    e.target.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)'
+                  }
+                }}
+              >
+                Confirm Selection
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   )

@@ -2,12 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch, clearSession, resolveAssetUrl } from '../api'
 import { useUnreadMessages } from '../hooks/useUnreadMessages'
-import { formatDate, formatRole, getTaskStage } from '../utils/helpers'
+import { formatDate, formatRole, getTaskStage, formatCategories } from '../utils/helpers'
 import ProfileSettings from '../components/ProfileSettings'
 import ChatMessages from '../components/ChatMessages'
 import DashboardWelcomeBanner from '../components/DashboardWelcomeBanner'
 
-const emptyTeamForm = { name: '', designerEmail: '', developerEmail: '', testerEmail: '' }
+const emptyTeamForm = { name: '', designerId: '', developerId: '', testerId: '' }
 const emptyAssignment = { teamId: '', designerDeadline: '', developerDeadline: '', testerDeadline: '' }
 const emptyProfileForm = { name: '', phone: '', department: '', profilePicture: null }
 const formatMemberLabel = (member) => {
@@ -33,6 +33,18 @@ const STATUS = {
 	AWAITING_CLIENT_REVIEW: 'Awaiting Client Review',
 	COMPLETED: 'Completed'
 }
+
+const ACTIVE_TEAM_STATUSES = [
+	STATUS.DESIGN_IN_PROGRESS,
+	STATUS.DESIGN_REVIEW,
+	STATUS.DEVELOPMENT_IN_PROGRESS,
+	STATUS.DEVELOPMENT_REVIEW,
+	STATUS.TESTING_IN_PROGRESS,
+	STATUS.TESTING_REVIEW,
+	STATUS.AWAITING_HR_REVIEW,
+	STATUS.AWAITING_CLIENT_REVIEW,
+	STATUS.CHANGES_REQUESTED
+]
 
 const REVIEW_ACTIONS = {
 	[STATUS.DESIGN_REVIEW]: {
@@ -82,6 +94,7 @@ export default function ManagerDashboard(){
 	const [deletingTeamId, setDeletingTeamId] = useState(null)
 	const [profileForm, setProfileForm] = useState(emptyProfileForm)
 	const [_updatingProfile, setUpdatingProfile] = useState(false)
+	const [availableUsers, setAvailableUsers] = useState({ designers: [], developers: [], testers: [] })
 
 	const loadDashboard = useCallback(async (withSpinner = false) => {
 		if (withSpinner) setLoading(true)
@@ -121,13 +134,27 @@ export default function ManagerDashboard(){
 		return () => document.removeEventListener('click', handleClickOutside)
 	}, [setShowProfileMenu])
 
+	const loadAvailableUsers = async () => {
+		try {
+			const [designers, developers, testers] = await Promise.all([
+				apiFetch('/api/manager/users?role=designer'),
+				apiFetch('/api/manager/users?role=developer'),
+				apiFetch('/api/manager/users?role=tester')
+			])
+			setAvailableUsers({ designers, developers, testers })
+		} catch(err) {
+			console.error('Failed to load available users:', err)
+		}
+	}
+
 	const handleEditTeam = (team) => {
+		loadAvailableUsers()
 		setEditingTeamId(team._id)
 		setTeamForm({
 			name: team.name,
-			designerEmail: team.members.find(m => m.role === 'designer')?.email || '',
-			developerEmail: team.members.find(m => m.role === 'developer')?.email || '',
-			testerEmail: team.members.find(m => m.role === 'tester')?.email || ''
+			designerId: team.members.find(m => m.role === 'designer')?._id || '',
+			developerId: team.members.find(m => m.role === 'developer')?._id || '',
+			testerId: team.members.find(m => m.role === 'tester')?._id || ''
 		})
 		setShowTeamForm(true)
 	}
@@ -238,25 +265,61 @@ export default function ManagerDashboard(){
 	].includes(task.status)), [tasks])
 	const _completedTasks = useMemo(() => tasks.filter(task => task.status === STATUS.COMPLETED), [tasks])
 
+	const teamStatusMap = useMemo(() => {
+		const statusMap = {}
+		teams.forEach((team) => {
+			statusMap[team._id] = { activeCount: 0 }
+		})
+
+		tasks.forEach((task) => {
+			const teamId = task.assignedTeam?._id
+			if (!teamId || !ACTIVE_TEAM_STATUSES.includes(task.status)) return
+			if (!statusMap[teamId]) {
+				statusMap[teamId] = { activeCount: 0 }
+			}
+			statusMap[teamId].activeCount += 1
+		})
+
+		return statusMap
+	}, [teams, tasks])
+
+	const getTeamStatus = (teamId) => {
+		const teamLoad = teamStatusMap[teamId] || { activeCount: 0 }
+		if (teamLoad.activeCount > 0) {
+			return {
+				label: 'Working on a Task',
+				color: '#b45309',
+				background: '#fef3c7',
+				border: '#f59e0b'
+			}
+		}
+		return {
+			label: 'Free',
+			color: '#166534',
+			background: '#dcfce7',
+			border: '#4ade80'
+		}
+	}
+
 	const handleTeamCreate = async (e) => {
 		e.preventDefault()
 		if (!teamForm.name.trim()) {
 			setError('Team name is required')
 			return
 		}
-		const requiredRoles = ['designerEmail', 'developerEmail', 'testerEmail']
+		const requiredRoles = ['designerId', 'developerId', 'testerId']
 		const missing = requiredRoles.filter(field => !(teamForm[field] || '').trim())
 		if (missing.length) {
-			setError('Enter emails for designer, developer, and tester')
+			setError('Select designer, developer, and tester for the team')
 			return
 		}
 		setCreatingTeam(true); setMessage(''); setError(null)
 		try{
 			const payload = {
 				name: teamForm.name.trim(),
-				designerEmail: teamForm.designerEmail.trim(),
-				developerEmail: teamForm.developerEmail.trim(),
-				testerEmail: teamForm.testerEmail.trim()
+				designerId: teamForm.designerId,
+				developerId: teamForm.developerId,
+				testerId: teamForm.testerId
 			}
 			if (editingTeamId) {
 				await apiFetch(`/api/manager/teams/${editingTeamId}`, { method: 'PUT', body: payload })
@@ -273,15 +336,14 @@ export default function ManagerDashboard(){
 		finally{ setCreatingTeam(false) }
 	}
 
-	const handleAddMember = async (teamId) => {
-		const payload = memberInputs[teamId]
-		if (!payload || !payload.trim()) {
-			setError('Enter member email to add')
+	const handleAddMember = async (teamId, memberId) => {
+		if (!memberId || !memberId.trim()) {
+			setError('Select a member to add')
 			return
 		}
 		setError(null); setMessage('')
 		try{
-			await apiFetch(`/api/manager/teams/${teamId}/members`, { method: 'POST', body: { memberEmail: payload.trim() } })
+			await apiFetch(`/api/manager/teams/${teamId}/members`, { method: 'POST', body: { memberId: memberId.trim() } })
 			setMemberInputs(prev => ({ ...prev, [teamId]: '' }))
 			setMessage('Member added to team')
 			await refreshTeams()
@@ -404,7 +466,7 @@ export default function ManagerDashboard(){
 					setEditingTeamId(null)
 					setTeamForm(emptyTeamForm)
 				}}>
-					<div className="modal-content" onClick={(e) => e.stopPropagation()} style={{maxWidth: '600px'}}>
+					<div className="modal-content" onClick={(e) => e.stopPropagation()} style={{maxWidth: '700px'}}>
 						<div className="modal-header">
 							<h2 className="modal-title">{editingTeamId ? 'Edit Team' : 'Create New Team'}</h2>
 							<button className="modal-close" onClick={() => {
@@ -413,28 +475,83 @@ export default function ManagerDashboard(){
 								setTeamForm(emptyTeamForm)
 							}}>×</button>
 						</div>
-						<form className="form" onSubmit={handleTeamCreate}>
-							<label>Team name
-								<input value={teamForm.name} onChange={e=>setTeamForm(prev=>({ ...prev, name: e.target.value }))} required />
-							</label>
-							<label>Designer email
-								<input value={teamForm.designerEmail} onChange={e=>setTeamForm(prev=>({ ...prev, designerEmail: e.target.value }))} required />
-							</label>
-							<label>Developer email
-								<input value={teamForm.developerEmail} onChange={e=>setTeamForm(prev=>({ ...prev, developerEmail: e.target.value }))} required />
-							</label>
-							<label>Tester email
-								<input value={teamForm.testerEmail} onChange={e=>setTeamForm(prev=>({ ...prev, testerEmail: e.target.value }))} required />
-							</label>
-							<div className="form-row" style={{gap: 8}}>
-								<button className="btn" disabled={creatingTeam}>
-									{creatingTeam ? 'Saving...' : (editingTeamId ? 'Update Team' : 'Create Team')}
-								</button>
+						<form onSubmit={handleTeamCreate}>
+							<div className="modal-body">
+								<div className="form">
+									<label>Team name
+										<input value={teamForm.name} onChange={e=>setTeamForm(prev=>({ ...prev, name: e.target.value }))} required />
+									</label>
+									<label>Designer
+										<select 
+											value={teamForm.designerId} 
+											onChange={e=>setTeamForm(prev=>({ ...prev, designerId: e.target.value }))} 
+											required
+											style={{padding: '10px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14}}
+										>
+											<option value="">Select a designer</option>
+											{availableUsers.designers.map(user => (
+												<option key={user._id} value={user._id}>
+													{user.name} ({user.email}) • {formatCategories(user.categories || [user.category])}
+												</option>
+											))}
+										</select>
+										{availableUsers.designers.length === 0 && (
+											<div style={{marginTop: 6, fontSize: 12, color: '#ef4444'}}>
+												No designers available with matching categories.
+											</div>
+										)}
+									</label>
+									<label>Developer
+										<select 
+											value={teamForm.developerId} 
+											onChange={e=>setTeamForm(prev=>({ ...prev, developerId: e.target.value }))} 
+											required
+											style={{padding: '10px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14}}
+										>
+											<option value="">Select a developer</option>
+											{availableUsers.developers.map(user => (
+												<option key={user._id} value={user._id}>
+													{user.name} ({user.email}) • {formatCategories(user.categories || [user.category])}
+												</option>
+											))}
+										</select>
+										{availableUsers.developers.length === 0 && (
+											<div style={{marginTop: 6, fontSize: 12, color: '#ef4444'}}>
+												No developers available with matching categories.
+											</div>
+										)}
+									</label>
+									<label>Tester
+										<select 
+											value={teamForm.testerId} 
+											onChange={e=>setTeamForm(prev=>({ ...prev, testerId: e.target.value }))} 
+											required
+											style={{padding: '10px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14}}
+										>
+											<option value="">Select a tester</option>
+											{availableUsers.testers.map(user => (
+												<option key={user._id} value={user._id}>
+													{user.name} ({user.email}) • {formatCategories(user.categories || [user.category])}
+												</option>
+											))}
+										</select>
+										{availableUsers.testers.length === 0 && (
+											<div style={{marginTop: 6, fontSize: 12, color: '#ef4444'}}>
+												No testers available with matching categories.
+											</div>
+										)}
+									</label>
+								</div>
+							</div>
+							<div className="modal-footer">
 								<button type="button" className="btn btn-outline" onClick={()=>{
 									setShowTeamForm(false)
 									setEditingTeamId(null)
 									setTeamForm(emptyTeamForm)
 								}}>Cancel</button>
+								<button className="btn" disabled={creatingTeam}>
+									{creatingTeam ? 'Saving...' : (editingTeamId ? 'Update Team' : 'Create Team')}
+								</button>
 							</div>
 						</form>
 					</div>
@@ -748,6 +865,7 @@ export default function ManagerDashboard(){
 										<div className="dashboard-section-header">
 											<h3 className="dashboard-section-title">My Teams</h3>
 											<button className="btn" onClick={()=>{
+												loadAvailableUsers()
 												setEditingTeamId(null)
 												setTeamForm(emptyTeamForm)
 												setShowTeamForm(true)
@@ -758,7 +876,13 @@ export default function ManagerDashboard(){
 
 										{teams.length ? (
 											<div style={{display: 'grid', gap: 16}}>
-												{teams.map(team => (
+												{teams.map(team => {
+													// Load users if not already loaded
+													if (availableUsers.designers.length === 0 && availableUsers.developers.length === 0 && availableUsers.testers.length === 0) {
+														loadAvailableUsers()
+													}
+													
+													return (
 													<div key={team._id} className="item-card">
 														<div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12}}>
 															<div style={{flex: 1}}>
@@ -783,10 +907,35 @@ export default function ManagerDashboard(){
 																</button>
 															</div>
 														</div>
-										<div className="small-row" style={{marginTop:12}}>
-											<input style={{flex:1, padding:'8px 12px', border:'1px solid var(--border)', borderRadius:6}} placeholder="Member email" value={memberInputs[team._id] || ''} onChange={e=>setMemberInputs(prev=>({...prev, [team._id]: e.target.value}))}/>
-											<button className="btn small" onClick={()=>handleAddMember(team._id)}>+ Add Member</button>
-										</div>
+													<div className="small-row" style={{marginTop:12, gap: 8}}>
+														<select 
+															style={{flex:1, padding:'8px 12px', border:'1px solid var(--border)', borderRadius:6}} 
+															value={memberInputs[team._id] || ''} 
+															onChange={e=>setMemberInputs(prev=>({...prev, [team._id]: e.target.value}))}
+														>
+															<option value="">Select member to add</option>
+															{[...availableUsers.designers, ...availableUsers.developers, ...availableUsers.testers]
+																.filter(user => !team.members.some(m => m._id === user._id))
+																.map(user => (
+																	<option key={user._id} value={user._id}>
+																		{user.name} ({user.role}) • {formatCategories(user.categories || [user.category])}
+																	</option>
+																))}
+														</select>
+														<button 
+															className="btn small" 
+															onClick={()=>{
+																const memberId = memberInputs[team._id]
+																if (!memberId) {
+																	setError('Select a member to add')
+																	return
+																}
+																handleAddMember(team._id, memberId)
+															}}
+														>
+															+ Add Member
+														</button>
+													</div>
 										{team.members.length ? (
 											<div style={{marginTop:16, paddingTop:16, borderTop:'2px solid #e2e8f0'}}>
 												{team.members.map(member => (
@@ -803,10 +952,11 @@ export default function ManagerDashboard(){
 												))}
 											</div>
 										) : <p style={{color:'var(--muted)', padding:'12px', textAlign:'center', background:'#f8fafc', borderRadius:'6px', marginTop:12}}>No members yet</p>}
-									</div>
-								))}
-							</div>
-						) : <p style={{color:'var(--muted)', padding:'16px', textAlign:'center', background:'#f8fafc', borderRadius:'8px'}}>No teams created yet.</p>}
+													</div>
+												)
+											})}
+											</div>
+										) : <p style={{color:'var(--muted)', padding:'16px', textAlign:'center', background:'#f8fafc', borderRadius:'8px'}}>No teams created yet.</p>}
 									</div>
 								)}
 
@@ -846,12 +996,30 @@ export default function ManagerDashboard(){
 												<select value={selection.teamId} onChange={e=>setAssignmentSelection(task._id, 'teamId', e.target.value)}>
 													<option value="">Select team</option>
 													{teams.map(team => (
-														<option key={team._id} value={team._id}>{team.name}</option>
+																		<option key={team._id} value={team._id}>{team.name} — {getTeamStatus(team._id).label}</option>
 													))}
 												</select>
 											</div>
 											{selection.teamId ? (
 												<>
+																	{(() => {
+																		const status = getTeamStatus(selection.teamId)
+																		return (
+																			<div style={{ marginTop: 6 }}>
+																				<span style={{
+																					padding: '2px 8px',
+																					borderRadius: 999,
+																					fontSize: 11,
+																					fontWeight: 700,
+																					color: status.color,
+																					background: status.background,
+																					border: `1px solid ${status.border}`
+																				}}>
+																					Team Status: {status.label}
+																				</span>
+																			</div>
+																		)
+																	})()}
 													<div className="help" style={{marginTop:4}}>
 														Designer: {formatMemberLabel(roleMap?.designer)} | Developer: {formatMemberLabel(roleMap?.developer)} | Tester: {formatMemberLabel(roleMap?.tester)}
 													</div>

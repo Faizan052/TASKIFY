@@ -75,7 +75,7 @@ const findRoleUserByEmail = async ({ email, role, res }) => {
 
 // Manager creates a team with required designer/developer/tester
 router.post('/teams', protect, roleRequired('manager'), asyncHandler(async (req, res) => {
-    const { name, designerEmail, developerEmail, testerEmail } = req.body;
+    const { name, designerEmail, developerEmail, testerEmail, designerId, developerId, testerId } = req.body;
     const managerId = req.user._id;
 
     if (!name || !name.trim()) {
@@ -83,9 +83,47 @@ router.post('/teams', protect, roleRequired('manager'), asyncHandler(async (req,
         throw new Error('Team name is required');
     }
 
-    const designer = await findRoleUserByEmail({ email: designerEmail, role: 'designer', res });
-    const developer = await findRoleUserByEmail({ email: developerEmail, role: 'developer', res });
-    const tester = await findRoleUserByEmail({ email: testerEmail, role: 'tester', res });
+    // Support both email and ID-based selection
+    let designer, developer, tester;
+    
+    if (designerId) {
+        designer = await User.findOne({ _id: designerId, role: 'designer' }).select('_id name email role category categories');
+        if (!designer) {
+            res.status(404);
+            throw new Error('Designer not found');
+        }
+    } else if (designerEmail) {
+        designer = await findRoleUserByEmail({ email: designerEmail, role: 'designer', res });
+    } else {
+        res.status(400);
+        throw new Error('Provide designer');
+    }
+
+    if (developerId) {
+        developer = await User.findOne({ _id: developerId, role: 'developer' }).select('_id name email role category categories');
+        if (!developer) {
+            res.status(404);
+            throw new Error('Developer not found');
+        }
+    } else if (developerEmail) {
+        developer = await findRoleUserByEmail({ email: developerEmail, role: 'developer', res });
+    } else {
+        res.status(400);
+        throw new Error('Provide developer');
+    }
+
+    if (testerId) {
+        tester = await User.findOne({ _id: testerId, role: 'tester' }).select('_id name email role category categories');
+        if (!tester) {
+            res.status(404);
+            throw new Error('Tester not found');
+        }
+    } else if (testerEmail) {
+        tester = await findRoleUserByEmail({ email: testerEmail, role: 'tester', res });
+    } else {
+        res.status(400);
+        throw new Error('Provide tester');
+    }
 
     const managerCategories = getUserCategories(req.user);
     if (!managerCategories.length) {
@@ -467,6 +505,39 @@ router.put('/tasks/:id', protect, roleRequired('manager'), asyncHandler(async (r
     await updated.populate('createdBy', 'username name email role category');
 
     res.json(updated);
+}));
+
+// Manager fetches users by role (for dynamic team creation)
+router.get('/users', protect, roleRequired('manager'), asyncHandler(async (req, res) => {
+    const { role, category } = req.query;
+    
+    let query = {};
+    if (role) {
+        // Only allow fetching designer, developer, tester roles
+        if (!['designer', 'developer', 'tester'].includes(role)) {
+            res.status(400);
+            throw new Error('Invalid role. Only designer, developer, and tester are allowed.');
+        }
+        query.role = role;
+    } else {
+        // If no role specified, return designer, developer, tester only
+        query.role = { $in: ['designer', 'developer', 'tester'] };
+    }
+    
+    // Filter by manager's categories
+    const managerCategories = getUserCategories(req.user);
+    if (managerCategories.length > 0) {
+        query.$or = [
+            { categories: { $in: managerCategories } },
+            { category: { $in: managerCategories } }
+        ];
+    }
+    
+    const users = await User.find(query)
+        .select('_id name email role category categories')
+        .sort({ role: 1, name: 1 });
+    
+    res.json(users);
 }));
 
 module.exports = router;
