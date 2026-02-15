@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../api'
-import { isValidEmail, getPasswordRequirements, checkPasswordStrength } from '../utils/helpers'
+import { isValidEmail, getPasswordRequirements, checkPasswordStrength, CATEGORY_OPTIONS, formatCategory, formatCategories } from '../utils/helpers'
 import Message from '../components/Message'
 import ForgotPassword from '../components/ForgotPassword'
 
 const SLIDE_MS = 600
+const ROLES_REQUIRING_CATEGORY = ['developer', 'designer', 'tester']
 
 // ============================================
 // Validation Functions
@@ -52,6 +53,12 @@ const validateConfirmPassword = (password, confirmPassword) => {
   return null
 }
 
+const validateCategory = (role, categories) => {
+  if (!ROLES_REQUIRING_CATEGORY.includes(role)) return null
+  if (!Array.isArray(categories) || categories.length === 0) return 'Please select at least one category'
+  return null
+}
+
 // ============================================
 // Main AuthSlider Component
 // ============================================
@@ -80,9 +87,10 @@ export default function AuthSlider() {
   const [regPassword, setRegPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [role, setRole] = useState('developer')
+  const [selectedCategories, setSelectedCategories] = useState([])
   const [otp, setOtp] = useState('')
   const [regStep, setRegStep] = useState(1) // 1: Basic Info, 2: OTP Verification
-  const [otpSent, setOtpSent] = useState(false)
+  const [_otpSent, setOtpSent] = useState(false)
   const [sendingOtp, setSendingOtp] = useState(false)
   const [showRegPassword, setShowRegPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -90,8 +98,10 @@ export default function AuthSlider() {
     name: false,
     email: false,
     password: false,
-    confirmPassword: false
+    confirmPassword: false,
+    category: false
   })
+  const [regPasswordFocused, setRegPasswordFocused] = useState(false)
 
   // Common state
   const [loading, setLoading] = useState(false)
@@ -125,6 +135,7 @@ export default function AuthSlider() {
   const confirmPasswordError = registerTouched.confirmPassword 
     ? validateConfirmPassword(regPassword, confirmPassword) 
     : null
+  const categoryError = registerTouched.category ? validateCategory(role, selectedCategories) : null
   
   const passwordStrength = regPassword ? checkPasswordStrength(regPassword) : null
   const passwordRequirements = useMemo(() => getPasswordRequirements(regPassword), [regPassword])
@@ -132,7 +143,17 @@ export default function AuthSlider() {
   const isRegisterFormValid = !validateName(name) &&
     !validateRegisterEmail(regEmail) &&
     !validateRegisterPassword(regPassword) &&
-    !validateConfirmPassword(regPassword, confirmPassword)
+    !validateConfirmPassword(regPassword, confirmPassword) &&
+    !validateCategory(role, selectedCategories)
+
+  const toggleCategorySelection = (categoryValue) => {
+    setSelectedCategories((prev) => {
+      if (prev.includes(categoryValue)) {
+        return prev.filter((item) => item !== categoryValue)
+      }
+      return [...prev, categoryValue]
+    })
+  }
 
   // ============================================
   // Helper Functions
@@ -245,7 +266,7 @@ export default function AuthSlider() {
 
     if (regStep === 1) {
       // Step 1: Send OTP
-      setRegisterTouched({ name: true, email: true, password: true, confirmPassword: true })
+      setRegisterTouched({ name: true, email: true, password: true, confirmPassword: true, category: true })
 
       if (!isRegisterFormValid) {
         setRegisterError('Please fix all validation errors')
@@ -256,12 +277,13 @@ export default function AuthSlider() {
       setRegisterError(null)
 
       try {
-        const res = await apiFetch('/api/user/send-otp', {
+        await apiFetch('/api/user/send-otp', {
           method: 'POST',
           body: {
             name: name.trim(),
             email: regEmail.trim(),
-            role
+            role,
+            categories: selectedCategories
           }
         })
 
@@ -284,13 +306,14 @@ export default function AuthSlider() {
       setRegisterError(null)
 
       try {
-        const res = await apiFetch('/api/user/register', {
+        await apiFetch('/api/user/register', {
           method: 'POST',
           body: {
             name: name.trim(),
             email: regEmail.trim(),
             password: regPassword,
             role,
+            categories: selectedCategories,
             otp: otp.trim()
           }
         })
@@ -315,7 +338,8 @@ export default function AuthSlider() {
         body: {
           name: name.trim(),
           email: regEmail.trim(),
-          role
+          role,
+          categories: selectedCategories
         }
       })
 
@@ -495,7 +519,11 @@ export default function AuthSlider() {
                     type={showRegPassword ? 'text' : 'password'}
                     value={regPassword}
                     onChange={(e) => setRegPassword(e.target.value)}
-                    onBlur={() => setRegisterTouched((prev) => ({ ...prev, password: true }))}
+                    onFocus={() => setRegPasswordFocused(true)}
+                    onBlur={() => {
+                      setRegPasswordFocused(false)
+                      setRegisterTouched((prev) => ({ ...prev, password: true }))
+                    }}
                     className={registerTouched.password ? (regPasswordError ? 'invalid' : 'valid') : ''}
                     placeholder="Password"
                   />
@@ -511,7 +539,7 @@ export default function AuthSlider() {
                 {regPasswordError && <div className="validation-error">{regPasswordError}</div>}
 
                 {/* Password Strength Indicator */}
-                {regPassword && passwordStrength && (
+                {regPassword && passwordStrength && regPasswordFocused && (
                   <div className={`password-strength ${passwordStrength}`}>
                     <span className="password-strength-label">
                       Strength: {passwordStrength.charAt(0).toUpperCase() + passwordStrength.slice(1)}
@@ -523,7 +551,7 @@ export default function AuthSlider() {
                 )}
 
                 {/* Password Requirements */}
-                {regPassword && (
+                {regPassword && regPasswordFocused && (
                   <div className="input-requirements">
                     <ul>
                       {passwordRequirements.map((req, idx) => (
@@ -561,7 +589,13 @@ export default function AuthSlider() {
 
                 <select 
                   value={role} 
-                  onChange={(e) => setRole(e.target.value)} 
+                  onChange={(e) => {
+                    const selectedRole = e.target.value
+                    setRole(selectedRole)
+                    if (!ROLES_REQUIRING_CATEGORY.includes(selectedRole)) {
+                      setSelectedCategories([])
+                    }
+                  }} 
                   className="role-select"
                 >
                   <option value="developer">Developer</option>
@@ -569,6 +603,44 @@ export default function AuthSlider() {
                   <option value="tester">Tester</option>
                   <option value="client">Client</option>
                 </select>
+
+                {ROLES_REQUIRING_CATEGORY.includes(role) && (
+                  <>
+                    <div
+                      style={{
+                        width: '100%',
+                        marginTop: '10px',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '8px',
+                        padding: '10px',
+                        textAlign: 'left'
+                      }}
+                      onBlur={() => setRegisterTouched((prev) => ({ ...prev, category: true }))}
+                    >
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#475569', marginBottom: '8px' }}>
+                        Select categories (multiple)
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
+                        {CATEGORY_OPTIONS.map((item) => (
+                          <label key={item.value} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#334155' }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedCategories.includes(item.value)}
+                              onChange={() => toggleCategorySelection(item.value)}
+                            />
+                            {item.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    {categoryError && <div className="validation-error">{categoryError}</div>}
+                    {selectedCategories.length > 0 && (
+                      <div className="validation-success" style={{ textAlign: 'left' }}>
+                        Selected: {formatCategories(selectedCategories)}
+                      </div>
+                    )}
+                  </>
+                )}
 
                 <button 
                   className="auth-submit-btn" 
@@ -594,6 +666,11 @@ export default function AuthSlider() {
                   <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>
                     {regEmail}
                   </div>
+                  {ROLES_REQUIRING_CATEGORY.includes(role) && selectedCategories.length > 0 && (
+                    <div style={{ marginTop: '0.5rem', color: 'var(--text-muted)' }}>
+                      Categories: {selectedCategories.map((item) => formatCategory(item)).join(', ')}
+                    </div>
+                  )}
                 </div>
 
                 <input

@@ -1,14 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch, clearSession } from '../api'
+import { useUnreadMessages } from '../hooks/useUnreadMessages'
+import { formatDate } from '../utils/helpers'
 import ProfileSettings from '../components/ProfileSettings'
 import ChatMessages from '../components/ChatMessages'
 import UserManagement from '../components/UserManagement'
 
 const AUTO_REFRESH_INTERVAL = 30000
 const emptyHrForm = { name: '', email: '', password: '' }
-
-const formatDate = (value) => value ? new Date(value).toLocaleDateString() : '—'
 
 export default function AdminDashboard(){
 	const nav = useNavigate()
@@ -17,7 +17,7 @@ export default function AdminDashboard(){
 	const [teams, setTeams] = useState([])
 	const [clients, setClients] = useState([])
 	const [hrs, setHrs] = useState([])
-	const [loading, setLoading] = useState(true)
+	const [_loading, setLoading] = useState(true)
 	const [error, setError] = useState(null)
 	const [activeView, setActiveView] = useState('overview')
 	const [message, setMessage] = useState('')
@@ -25,7 +25,7 @@ export default function AdminDashboard(){
 	const [showHrForm, setShowHrForm] = useState(false)
 	const [submittingHr, setSubmittingHr] = useState(false)
 	const [editingHrId, setEditingHrId] = useState(null)
-	const [unreadMessages, setUnreadMessages] = useState(0)
+	const { unreadMessages, setUnreadMessages } = useUnreadMessages(10000)
 
 	const adminDetails = useMemo(() => profile && profile.admin ? profile.admin : null, [profile])
 	const displayName = adminDetails && adminDetails.username ? adminDetails.username : 'Admin'
@@ -56,20 +56,6 @@ export default function AdminDashboard(){
 		const id = setInterval(()=>{ loadDashboard() }, AUTO_REFRESH_INTERVAL)
 		return () => clearInterval(id)
 	},[loadDashboard])
-
-	useEffect(() => {
-		const loadUnreadCount = async () => {
-			try {
-				const data = await apiFetch('/api/messages/unread-count')
-				setUnreadMessages(data.count || 0)
-			} catch (err) {
-				// Silent fail
-			}
-		}
-		loadUnreadCount()
-		const id = setInterval(loadUnreadCount, 10000) // Check every 10 seconds
-		return () => clearInterval(id)
-	}, [])
 
 	const logout = () => {
 		clearSession()
@@ -342,7 +328,7 @@ export default function AdminDashboard(){
 					</div>
 				)
 
-			default:
+			default: {
 				const completedTasks = tasks?.filter(t => t.status === 'Completed').length || 0
 				const activeTasks = tasks?.length - completedTasks || 0
 				const completionRate = tasks?.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0
@@ -595,6 +581,7 @@ export default function AdminDashboard(){
 						</div>
 					</div>
 				)
+			}
 		}
 	}
 
@@ -777,7 +764,7 @@ export default function AdminDashboard(){
 			{/* Main Content Area */}
 			<div className="admin-main-wrapper">
 				{/* Floating Profile Button */}
-				<div className="floating-profile-wrapper">
+				<div className="floating-profile-wrapper" onMouseEnter={() => setShowProfileMenu(true)} onMouseLeave={() => setShowProfileMenu(false)}>
 					<button 
 						className="floating-profile-btn"
 						onClick={() => setShowProfileMenu(!showProfileMenu)}

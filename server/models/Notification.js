@@ -31,4 +31,8 @@ const notificationSchema = new mongoose.Schema({
     timestamps: true
 });
 
+// Indexes for improved query performance
+notificationSchema.index({ recipient: 1, read: 1, createdAt: -1 });
+notificationSchema.index({ task: 1 });
+
 module.exports = mongoose.model('Notification', notificationSchema);

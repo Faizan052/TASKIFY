@@ -22,7 +22,7 @@ export default function AdminRegister() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   const [step, setStep] = useState(1) // 1: Basic Info, 2: OTP Verification
-  const [otpSent, setOtpSent] = useState(false)
+  const [_otpSent, setOtpSent] = useState(false)
   const [loading, setLoading] = useState(false)
   const [sendingOtp, setSendingOtp] = useState(false)
   const [checkingAdmin, setCheckingAdmin] = useState(true)
@@ -168,7 +168,7 @@ export default function AdminRegister() {
     setSuccess(null)
 
     try {
-      const response = await apiFetch('/api/admin/register', {
+      await apiFetch('/api/admin/register', {
         method: 'POST',
         body: {
           name: name.trim(),

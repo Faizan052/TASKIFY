@@ -1,0 +1,261 @@
+/* ============================================
+   TABLE STYLES
+   ============================================ */
+
+table {
+  background: var(--card);
+  border-radius: 10px;
+  overflow: hidden;
+  border-collapse: collapse;
+  width: 100%;
+  max-width: 100%;
+  margin-top: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e2e8f0;
+  table-layout: auto;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+  margin-top: 16px;
+  border-radius: 10px;
+}
+
+th, td {
+  font-size: 14px;
+  padding: 14px 16px;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+th {
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  color: #1e293b;
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  border-bottom: 2px solid #cbd5e1;
+}
+
+td {
+  color: #334155;
+}
+
+tr:hover {
+  background: #f8fafc;
+  transition: background 0.2s ease;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+tbody tr {
+  transition: all 0.2s ease;
+}
+
+/* Professional Tables */
+.table-glass {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="dark"] .table-glass {
+  background: rgba(15, 26, 43, 0.95);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.table-glass table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table-glass thead {
+  background: linear-gradient(135deg, rgba(11, 116, 222, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
+}
+
+.table-glass th {
+  padding: 16px 20px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.table-glass td {
+  padding: 16px 20px;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  font-size: 14px;
+}
+
+:root[data-theme="dark"] .table-glass td {
+  border-top-color: rgba(255, 255, 255, 0.05);
+}
+
+.table-glass tbody tr {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.table-glass tbody tr:hover {
+  background: rgba(11, 116, 222, 0.05);
+  transform: scale(1.01);
+}
+
+/* User Management Table */
+.user-management-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+  background: var(--card);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.user-management-table thead {
+  background: linear-gradient(135deg, rgba(102,126,234,0.08), rgba(118,75,162,0.05));
+}
+
+.user-management-table th {
+  padding: 16px;
+  text-align: left;
+  font-weight: 700;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-primary);
+  border-bottom: 2px solid var(--border);
+}
+
+.user-management-table td {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.user-management-table tbody tr:hover {
+  background: rgba(102,126,234,0.03);
+}
+
+.user-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.user-status-badge.active {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+
+.user-status-badge.inactive {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+.user-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.user-action-btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.user-action-btn.activate {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.user-action-btn.activate:hover {
+  background: rgba(16, 185, 129, 0.2);
+  transform: translateY(-1px);
+}
+
+.user-action-btn.deactivate {
+  background: rgba(251, 146, 60, 0.1);
+  color: #f97316;
+  border: 1px solid rgba(251, 146, 60, 0.2);
+}
+
+.user-action-btn.deactivate:hover {
+  background: rgba(251, 146, 60, 0.2);
+  transform: translateY(-1px);
+}
+
+.user-action-btn.delete {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.user-action-btn.delete:hover {
+  background: rgba(239, 68, 68, 0.2);
+  transform: translateY(-1px);
+}
+
+.user-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Dark mode table styles */
+:root[data-theme="dark"] table {
+  background: var(--card);
+}
+
+:root[data-theme="dark"] thead {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+:root[data-theme="dark"] th {
+  color: rgba(255, 255, 255, 0.85);
+  border-bottom: 1px solid var(--border);
+}
+
+:root[data-theme="dark"] td {
+  color: rgba(255, 255, 255, 0.8);
+  border-bottom: 1px solid var(--border);
+}
+
+:root[data-theme="dark"] tbody tr:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .table-glass {
+    overflow-x: auto;
+  }
+  
+  .table-wrapper {
+    overflow-x: auto;
+  }
+}

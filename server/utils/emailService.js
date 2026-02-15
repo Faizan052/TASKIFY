@@ -1,23 +1,25 @@
 const nodemailer = require('nodemailer');
 
+// Helper for development logging
+const isDev = process.env.NODE_ENV !== 'production';
+const logDev = (message) => {
+    if (isDev) console.log(message);
+};
+
 // Create transporter based on environment variables
 const createTransporter = () => {
-    // For development, you can use ethereal.email or any SMTP service
-    // For production, use your actual email service (Gmail, SendGrid, etc.)
-    
     const config = {
         host: process.env.SMTP_HOST || 'smtp.gmail.com',
         port: parseInt(process.env.SMTP_PORT || '587'),
-        secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
+        secure: process.env.SMTP_SECURE === 'true',
         auth: {
             user: process.env.SMTP_USER,
             pass: process.env.SMTP_PASS
         }
     };
 
-    // If no SMTP credentials, create a test account
     if (!config.auth.user || !config.auth.pass) {
-        console.warn('⚠️ SMTP credentials not configured. Email sending will be simulated.');
+        if (isDev) console.warn('⚠️ SMTP credentials not configured. Email sending will be simulated.');
         return null;
     }
 
@@ -34,13 +36,7 @@ const sendOTPEmail = async (email, otp, userName = 'User') => {
     const transporter = createTransporter();
     
     if (!transporter) {
-        // Simulate email sending for development
-        console.log('\n=================================');
-        console.log('📧 OTP EMAIL (Development Mode)');
-        console.log('=================================');
-        console.log(`To: ${email}`);
-        console.log(`OTP Code: ${otp}`);
-        console.log('=================================\n');
+        logDev(`📧 OTP EMAIL (Dev): ${email} - Code: ${otp}`);
         return { success: true, message: 'OTP logged to console (dev mode)' };
     }
 
@@ -104,7 +100,7 @@ const sendOTPEmail = async (email, otp, userName = 'User') => {
 
     try {
         const info = await transporter.sendMail(mailOptions);
-        console.log(`✅ OTP email sent to ${email}: ${info.messageId}`);
+        logDev(`✅ OTP email sent to ${email}`);
         return { success: true, messageId: info.messageId };
     } catch (error) {
         console.error('❌ Error sending OTP email:', error);
@@ -117,9 +113,7 @@ const sendWelcomeEmail = async (email, userName, role, password = null) => {
     const transporter = createTransporter();
     
     if (!transporter) {
-        console.log(`\n📧 WELCOME EMAIL (Dev Mode) to ${email}`);
-        if (password) console.log(`Username: ${email}\nPassword: ${password}`);
-        console.log('\n');
+        logDev(`📧 WELCOME EMAIL (Dev): ${email}${password ? ' - Password: ' + password : ''}`);
         return { success: true };
     }
 
@@ -218,7 +212,7 @@ const sendWelcomeEmail = async (email, userName, role, password = null) => {
 
     try {
         const info = await transporter.sendMail(mailOptions);
-        console.log(`✅ Welcome email sent to ${email}`);
+        logDev(`✅ Welcome email sent to ${email}`);
         return { success: true, messageId: info.messageId };
     } catch (error) {
         console.error('❌ Error sending welcome email:', error);
@@ -231,7 +225,7 @@ const sendPasswordResetOTP = async (email, otp, userName = 'User') => {
     const transporter = createTransporter();
     
     if (!transporter) {
-        console.log(`\n📧 PASSWORD RESET OTP (Dev Mode) to ${email}: ${otp}\n`);
+        logDev(`📧 PASSWORD RESET OTP (Dev): ${email} - OTP: ${otp}`);
         return { success: true };
     }
 
@@ -295,7 +289,7 @@ const sendPasswordResetOTP = async (email, otp, userName = 'User') => {
 
     try {
         const info = await transporter.sendMail(mailOptions);
-        console.log(`✅ Password reset OTP sent to ${email}`);
+        logDev(`✅ Password reset OTP sent to ${email}`);
         return { success: true, messageId: info.messageId };
     } catch (error) {
         console.error('❌ Error sending password reset OTP:', error);
@@ -308,7 +302,7 @@ const sendPasswordChangedEmail = async (email, userName = 'User') => {
     const transporter = createTransporter();
     
     if (!transporter) {
-        console.log(`\n📧 PASSWORD CHANGED EMAIL (Dev Mode) to ${email}\n`);
+        logDev(`📧 PASSWORD CHANGED EMAIL (Dev): ${email}`);
         return { success: true };
     }
 
@@ -369,7 +363,7 @@ const sendPasswordChangedEmail = async (email, userName = 'User') => {
 
     try {
         const info = await transporter.sendMail(mailOptions);
-        console.log(`✅ Password changed email sent to ${email}`);
+        logDev(`✅ Password changed email sent to ${email}`);
         return { success: true, messageId: info.messageId };
     } catch (error) {
         console.error('❌ Error sending password changed email:', error);
@@ -382,7 +376,7 @@ const sendNewPasswordEmail = async (email, userName, newPassword, role) => {
     const transporter = createTransporter();
     
     if (!transporter) {
-        console.log(`\n📧 NEW PASSWORD EMAIL (Dev Mode) to ${email}: ${newPassword}\n`);
+        logDev(`📧 NEW PASSWORD EMAIL (Dev): ${email} - Password: ${newPassword}`);
         return { success: true };
     }
 
@@ -449,7 +443,7 @@ const sendNewPasswordEmail = async (email, userName, newPassword, role) => {
 
     try {
         const info = await transporter.sendMail(mailOptions);
-        console.log(`✅ New password email sent to ${email}`);
+        logDev(`✅ New password email sent to ${email}`);
         return { success: true, messageId: info.messageId };
     } catch (error) {
         console.error('❌ Error sending new password email:', error);

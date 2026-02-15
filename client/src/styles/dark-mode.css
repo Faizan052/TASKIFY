@@ -1,0 +1,1095 @@
+/* ============================================
+   COMPREHENSIVE DARK MODE THEME OVERRIDES
+   Lines 6644-8220 from original index.css
+   ============================================ */
+
+/* ========================================
+   DARK MODE SUPPORT FOR ADMIN/HR DASHBOARDS
+   ======================================== */
+
+:root[data-theme="dark"] .admin-sidebar {
+  background: var(--card);
+  border-right: 1px solid var(--border);
+}
+
+:root[data-theme="dark"] .sidebar-item {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+:root[data-theme="dark"] .sidebar-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .sidebar-item.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+:root[data-theme="dark"] .admin-content {
+  background: var(--bg);
+}
+
+/* ==================== DARK MODE: NEW GLASS HEADER ==================== */
+
+:root[data-theme="dark"] .admin-glass-header {
+  background: rgba(26, 31, 53, 0.8);
+  border-bottom: 1px solid rgba(102, 126, 234, 0.25);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6),
+              0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+}
+
+:root[data-theme="dark"] .admin-logout-btn {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(220, 38, 38, 0.15) 100%);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+:root[data-theme="dark"] .admin-logout-btn:hover {
+  color: white;
+  box-shadow: 0 8px 25px rgba(239, 68, 68, 0.4),
+              0 0 0 4px rgba(239, 68, 68, 0.15);
+}
+
+:root[data-theme="dark"] .admin-nav-btn {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+:root[data-theme="dark"] .admin-nav-btn:hover {
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+}
+
+:root[data-theme="dark"] .admin-nav-btn.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.5),
+              0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+}
+
+:root[data-theme="dark"] .admin-dropdown-menu {
+  background: rgba(26, 31, 53, 0.98);
+  border: 1px solid rgba(102, 126, 234, 0.25);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7),
+              0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+}
+
+:root[data-theme="dark"] .dropdown-item {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+:root[data-theme="dark"] .dropdown-item:hover {
+  color: #4aa3ff;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+}
+
+:root[data-theme="dark"] .admin-dashboard-title {
+  background: linear-gradient(135deg, #4aa3ff 0%, #667eea 50%, #f093fb 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+:root[data-theme="dark"] .admin-dashboard-title::before {
+  background: linear-gradient(90deg, #4aa3ff 0%, #667eea 50%, #f093fb 100%);
+}
+
+:root[data-theme="dark"] .floating-profile-btn {
+  border-color: rgba(26, 31, 53, 0.9);
+  box-shadow: 0 10px 40px rgba(102, 126, 234, 0.6),
+              0 0 0 8px rgba(102, 126, 234, 0.15);
+}
+
+:root[data-theme="dark"] .floating-profile-btn:hover {
+  box-shadow: 0 15px 50px rgba(102, 126, 234, 0.7),
+              0 0 0 12px rgba(102, 126, 234, 0.2);
+}
+
+:root[data-theme="dark"] .floating-profile-menu {
+  background: rgba(26, 31, 53, 0.95);
+  border: 2px solid rgba(102, 126, 234, 0.25);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7),
+              0 5px 20px rgba(102, 126, 234, 0.2),
+              inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+:root[data-theme="dark"] .profile-menu-header {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
+}
+
+:root[data-theme="dark"] .profile-menu-name {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+:root[data-theme="dark"] .message-badge {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  box-shadow: 0 2px 12px rgba(239, 68, 68, 0.6);
+}
+
+:root[data-theme="dark"] .profile-menu-role {
+  color: var(--muted);
+  background: linear-gradient(135deg, #4aa3ff 0%, #667eea 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+:root[data-theme="dark"] .profile-menu-item {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+:root[data-theme="dark"] .profile-menu-item:hover {
+  background: rgba(102, 126, 234, 0.15);
+  color: #4aa3ff;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+}
+
+:root[data-theme="dark"] .profile-menu-item.logout {
+  color: #f87171;
+}
+
+:root[data-theme="dark"] .profile-menu-item.logout:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+}
+
+:root[data-theme="dark"] .profile-menu-divider {
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(102, 126, 234, 0.3) 50%, 
+    transparent 100%);
+}
+
+:root[data-theme="dark"] .admin-dashboard-fullscreen {
+  background: linear-gradient(135deg, #0b1220 0%, #151b2e 100%);
+}
+
+:root[data-theme="dark"] .admin-dashboard-fullscreen::before {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  opacity: 0.04;
+}
+
+/* ==================== END DARK MODE: NEW GLASS HEADER ==================== */
+
+:root[data-theme="dark"] .admin-view-header h2,
+:root[data-theme="dark"] .admin-card-header h3 {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+:root[data-theme="dark"] .stat-card,
+:root[data-theme="dark"] .admin-card {
+  background: var(--card);
+  border-color: var(--border);
+}
+
+:root[data-theme="dark"] .stat-card:hover,
+:root[data-theme="dark"] .admin-card:hover {
+  border-color: rgba(102, 126, 234, 0.4);
+}
+
+:root[data-theme="dark"] .stat-card-label,
+:root[data-theme="dark"] .admin-card-info {
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .admin-card-info strong {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+:root[data-theme="dark"] .empty-state {
+  background: var(--card);
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .admin-card-footer {
+  border-top: 1px solid var(--border);
+}
+
+/* User Dashboard Sidebar (HR/Manager/etc) */
+:root[data-theme="dark"] .user-sidebar {
+  background: var(--card);
+  border-right: 1px solid var(--border);
+}
+
+:root[data-theme="dark"] .user-sidebar-item {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+:root[data-theme="dark"] .user-sidebar-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .user-sidebar-item.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+:root[data-theme="dark"] .user-content {
+  background: var(--bg);
+}
+
+/* Dashboard Section Headers */
+:root[data-theme="dark"] .dashboard-section-title {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* Table Styles in Dark Mode */
+:root[data-theme="dark"] table {
+  background: var(--card);
+}
+
+:root[data-theme="dark"] thead {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+:root[data-theme="dark"] th {
+  color: rgba(255, 255, 255, 0.85);
+  border-bottom: 1px solid var(--border);
+}
+
+:root[data-theme="dark"] td {
+  color: rgba(255, 255, 255, 0.8);
+  border-bottom: 1px solid var(--border);
+}
+
+:root[data-theme="dark"] tbody tr:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Form Elements in Dark Mode */
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] select {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder {
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] input:focus,
+:root[data-theme="dark"] textarea:focus,
+:root[data-theme="dark"] select:focus {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Labels in Dark Mode */
+:root[data-theme="dark"] label {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* Unread Badge in Dark Mode */
+:root[data-theme="dark"] .unread-badge {
+  background: #ef4444;
+  color: white;
+}
+
+/* Status Pills/Badges in Dark Mode */
+:root[data-theme="dark"] .status-pill,
+:root[data-theme="dark"] .role-pill {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Task Cards in Dark Mode */
+:root[data-theme="dark"] .task-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+
+:root[data-theme="dark"] .task-card:hover {
+  border-color: rgba(102, 126, 234, 0.4);
+}
+
+:root[data-theme="dark"] .task-title {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+:root[data-theme="dark"] .task-meta {
+  color: var(--muted);
+}
+
+/* User Dashboard Top Bar and Brand */
+:root[data-theme="dark"] .user-top-bar {
+  background: var(--card);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+:root[data-theme="dark"] .user-brand-logo {
+  background: rgba(102, 126, 234, 0.15);
+  border-color: rgba(102, 126, 234, 0.4);
+  color: #667eea;
+}
+
+:root[data-theme="dark"] .user-brand-text h2 {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Admin Top Bar */
+:root[data-theme="dark"] .admin-top-bar {
+  background: var(--card);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+:root[data-theme="dark"] .brand-logo {
+  background: rgba(102, 126, 234, 0.15);
+  border-color: rgba(102, 126, 234, 0.4);
+  color: #667eea;
+}
+
+:root[data-theme="dark"] .brand-text h2 {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Buttons in Dark Mode */
+:root[data-theme="dark"] .btn-outline {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid var(--border);
+}
+
+:root[data-theme="dark"] .btn-outline:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Messages and Alerts in Dark Mode */
+:root[data-theme="dark"] .admin-message,
+:root[data-theme="dark"] .success-message {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+}
+
+:root[data-theme="dark"] .error-message {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+}
+
+/* Dropdown/Select Elements in Dark Mode */
+:root[data-theme="dark"] option {
+  background: var(--card);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* Code/Pre blocks in Dark Mode */
+:root[data-theme="dark"] pre,
+:root[data-theme="dark"] code {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid var(--border);
+}
+
+/* ========================================
+   COMPREHENSIVE DARK MODE FOR ALL INLINE STYLES
+   ======================================== */
+
+/* Override all hardcoded colors */
+:root[data-theme="dark"] [style*="color: #111"],
+:root[data-theme="dark"] [style*="color: #1f2937"],
+:root[data-theme="dark"] [style*="color: #111827"],
+:root[data-theme="dark"] [style*="color: #374151"] {
+  color: var(--text-primary) !important;
+}
+
+:root[data-theme="dark"] [style*="color: #6b7280"],
+:root[data-theme="dark"] [style*="color: #64748b"],
+:root[data-theme="dark"] [style*="color: #555"],
+:root[data-theme="dark"] [style*="color: #777"],
+:root[data-theme="dark"] [style*="color: #999"] {
+  color: var(--text-secondary) !important;
+}
+
+:root[data-theme="dark"] [style*="color: #9ca3af"] {
+  color: var(--text-tertiary) !important;
+}
+
+:root[data-theme="dark"] [style*="background: #fff"],
+:root[data-theme="dark"] [style*="background: white"],
+:root[data-theme="dark"] [style*="background: #ffffff"] {
+  background: var(--card) !important;
+}
+
+:root[data-theme="dark"] [style*="background: #f9fafb"],
+:root[data-theme="dark"] [style*="background: #f3f4f6"],
+:root[data-theme="dark"] [style*="background: #f8fafc"] {
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+
+:root[data-theme="dark"] [style*="background: #e5e7eb"],
+:root[data-theme="dark"] [style*="background: #f0f0f0"] {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+:root[data-theme="dark"] [style*="border: 2px solid #e5e7eb"],
+:root[data-theme="dark"] [style*="border: 2px solid #e4e7ec"] {
+  border: 2px solid var(--border) !important;
+}
+
+/* Status color overrides */
+:root[data-theme="dark"] [style*="color: #22c55e"] {
+  color: var(--color-success) !important;
+}
+
+:root[data-theme="dark"] [style*="color: #ef4444"],
+:root[data-theme="dark"] [style*="color: #dc2626"] {
+  color: var(--color-error) !important;
+}
+
+:root[data-theme="dark"] [style*="color: #f59e0b"],
+:root[data-theme="dark"] [style*="color: #d97706"] {
+  color: var(--color-warning) !important;
+}
+
+:root[data-theme="dark"] [style*="color: #3b82f6"],
+:root[data-theme="dark"] [style*="color: #2563eb"] {
+  color: var(--color-info) !important;
+}
+
+:root[data-theme="dark"] [style*="background: #fee2e2"] {
+  background: var(--color-error-light) !important;
+}
+
+:root[data-theme="dark"] [style*="background: #d1fae5"] {
+  background: var(--color-success-light) !important;
+}
+
+:root[data-theme="dark"] [style*="background: #fef3c7"] {
+  background: var(--color-warning-light) !important;
+}
+
+:root[data-theme="dark"] [style*="background: #dbeafe"] {
+  background: var(--color-info-light) !important;
+}
+
+/* Gradient backgrounds in cards */
+:root[data-theme="dark"] [style*="background: linear-gradient(to bottom, #fafbfc, #f3f4f6)"] {
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)) !important;
+}
+
+/* Chat and Message components */
+:root[data-theme="dark"] .message-container,
+:root[data-theme="dark"] .chat-container {
+  background: var(--card);
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .message-item {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+}
+
+:root[data-theme="dark"] .message-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Notice boxes */
+:root[data-theme="dark"] .notice {
+  border: 1px solid var(--border);
+}
+
+:root[data-theme="dark"] .notice-success {
+  background: var(--color-success-light);
+  color: var(--color-success);
+  border-color: var(--color-success);
+}
+
+:root[data-theme="dark"] .notice-error {
+  background: var(--color-error-light);
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+
+:root[data-theme="dark"] .notice-warning {
+  background: var(--color-warning-light);
+  color: var(--color-warning);
+  border-color: var(--color-warning);
+}
+
+:root[data-theme="dark"] .notice-info {
+  background: var(--color-info-light);
+  color: var(--color-info);
+  border-color: var(--color-info);
+}
+
+/* Stats and metric cards */
+:root[data-theme="dark"] .stats-grid > div,
+:root[data-theme="dark"] .metric-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+
+/* Task status badges */
+:root[data-theme="dark"] .task-status,
+:root[data-theme="dark"] .status-badge {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+/* Progress bars */
+:root[data-theme="dark"] .progress-bar {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+:root[data-theme="dark"] .progress-fill {
+  background: var(--gradient-primary);
+}
+
+/* Beautiful glassmorphism effect for dark mode */
+:root[data-theme="dark"] .glass-card {
+  background: rgba(26, 31, 53, 0.7);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+:root[data-theme="dark"] .glass-card:hover {
+  background: rgba(26, 31, 53, 0.85);
+  border-color: rgba(102, 126, 234, 0.4);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+/* Profile and Settings */
+:root[data-theme="dark"] .profile-banner {
+  background: var(--card);
+}
+
+:root[data-theme="dark"] .profile-banner::before {
+  background: linear-gradient(90deg, rgba(74, 163, 255, 0.18), rgba(74, 163, 255, 0.04), rgba(74, 163, 255, 0));
+}
+
+:root[data-theme="dark"] .profile-hero-avatar {
+  background: rgba(74, 163, 255, 0.16);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+}
+
+:root[data-theme="dark"] .profile-panel {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+:root[data-theme="dark"] .profile-avatar {
+  background: rgba(74, 163, 255, 0.16);
+}
+
+:root[data-theme="dark"] .profile-role-pill {
+  background: rgba(74, 163, 255, 0.16);
+}
+
+:root[data-theme="dark"] .profile-detail {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+:root[data-theme="dark"] .settings-panel .grid input[readonly] {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Chat Components */
+:root[data-theme="dark"] .chat-header-name {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+:root[data-theme="dark"] .chat-conversation-name,
+:root[data-theme="dark"] .chat-contact-name {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+:root[data-theme="dark"] .chat-message-received .chat-message-bubble {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+:root[data-theme="dark"] .chat-error {
+  background: rgba(255, 50, 50, 0.2);
+  color: #fcc;
+}
+
+:root[data-theme="dark"] .dashboard-header-glass {
+  background: rgba(15, 26, 43, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .header-nav {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+:root[data-theme="dark"] .header-user-name {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+:root[data-theme="dark"] .dashboard-section-header {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+/* Attachment list */
+:root[data-theme="dark"] .attachment-item {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+/* History entries */
+:root[data-theme="dark"] .history-item {
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 3px solid var(--accent);
+  color: var(--text-primary);
+}
+
+/* Team cards */
+:root[data-theme="dark"] .team-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .team-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+}
+
+/* User cards */
+:root[data-theme="dark"] .user-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+
+:root[data-theme="dark"] .user-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--accent);
+}
+
+/* Hover effects on interactive elements */
+:root[data-theme="dark"] [onclick]:hover,
+:root[data-theme="dark"] [role="button"]:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Ensure text remains readable on gradient backgrounds */
+:root[data-theme="dark"] [style*="linear-gradient"] {
+  color: white !important;
+}
+
+/* Links */
+:root[data-theme="dark"] a {
+  color: var(--accent);
+}
+
+:root[data-theme="dark"] a:hover {
+  color: var(--accent-dark);
+}
+
+/* Scrollbars for dark mode */
+:root[data-theme="dark"] ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+:root[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 5px;
+}
+
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 5px;
+}
+
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Tooltips */
+:root[data-theme="dark"] [title]:hover::after {
+  background: rgba(26, 31, 53, 0.95);
+  color: white;
+  border: 1px solid var(--border);
+}
+
+/* Placeholder text */
+:root[data-theme="dark"] ::placeholder {
+  color: var(--text-tertiary);
+  opacity: 1;
+}
+
+/* Focus states */
+:root[data-theme="dark"] *:focus {
+  outline-color: var(--accent);
+}
+
+:root[data-theme="dark"] *:focus-visible {
+  outline-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+/* Disabled states */
+:root[data-theme="dark"] [disabled],
+:root[data-theme="dark"] :disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Beautiful shadows in dark mode */
+:root[data-theme="dark"] .elevated {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 
+              0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* Loading states */
+:root[data-theme="dark"] .loading {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.05) 25%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.05) 75%
+  );
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ========================================
+   SMOOTH THEME TRANSITIONS
+   ======================================== */
+
+* {
+  transition: background-color 0.3s ease, 
+              color 0.3s ease, 
+              border-color 0.3s ease,
+              box-shadow 0.3s ease;
+}
+
+/* Don't transition transforms and position */
+*[style*="transform"],
+*[style*="translate"] {
+  transition: background-color 0.3s ease, 
+              color 0.3s ease, 
+              border-color 0.3s ease,
+              box-shadow 0.3s ease,
+              transform 0.2s ease !important;
+}
+
+/* ========================================
+   ADDITIONAL BEAUTIFUL DARK MODE STYLES
+   ======================================== */
+
+/* Make cards pop with subtle borders */
+:root[data-theme="dark"] .card,
+:root[data-theme="dark"] .admin-card,
+:root[data-theme="dark"] .user-card,
+:root[data-theme="dark"] .task-card {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3),
+              0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+:root[data-theme="dark"] .card:hover,
+:root[data-theme="dark"] .admin-card:hover,
+:root[data-theme="dark"] .user-card:hover,
+:root[data-theme="dark"] .task-card:hover {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4),
+              0 0 0 1px rgba(102, 126, 234, 0.3);
+  transform: translateY(-2px);
+}
+
+/* Input fields with glow effect */
+:root[data-theme="dark"] input:focus,
+:root[data-theme="dark"] textarea:focus,
+:root[data-theme="dark"] select:focus {
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2),
+              0 0 20px rgba(102, 126, 234, 0.1);
+}
+
+/* Buttons with enhanced styling */
+:root[data-theme="dark"] .btn,
+:root[data-theme="dark"] button:not(.sidebar-item):not(.user-sidebar-item) {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+:root[data-theme="dark"] .btn:hover,
+:root[data-theme="dark"] button:not(.sidebar-item):not(.user-sidebar-item):hover:not(:disabled) {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transform: translateY(-1px);
+}
+
+:root[data-theme="dark"] .btn:active,
+:root[data-theme="dark"] button:not(.sidebar-item):not(.user-sidebar-item):active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Sidebar items with beautiful hover */
+:root[data-theme="dark"] .sidebar-item:hover,
+:root[data-theme="dark"] .user-sidebar-item:hover {
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+}
+
+/* Headers with subtle gradient overlay */
+:root[data-theme="dark"] .admin-header,
+:root[data-theme="dark"] .user-header {
+  position: relative;
+  overflow: hidden;
+}
+
+:root[data-theme="dark"] .admin-header::before,
+:root[data-theme="dark"] .user-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), transparent);
+  pointer-events: none;
+}
+
+/* Empty states with better visibility */
+:root[data-theme="dark"] .empty-state {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed var(--border);
+}
+
+/* Dividers */
+:root[data-theme="dark"] hr {
+  border-color: var(--border);
+  opacity: 0.5;
+}
+
+:root[data-theme="dark"] .divider-glass {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+}
+
+/* Better text selection */
+:root[data-theme="dark"] ::selection {
+  background: rgba(102, 126, 234, 0.4);
+  color: white;
+}
+
+:root[data-theme="dark"] ::-moz-selection {
+  background: rgba(102, 126, 234, 0.4);
+  color: white;
+}
+
+/* Skeleton loading states */
+:root[data-theme="dark"] .skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.03) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+}
+
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Dropdown menus */
+:root[data-theme="dark"] .dropdown,
+:root[data-theme="dark"] .menu {
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+}
+
+:root[data-theme="dark"] .dropdown-item:hover,
+:root[data-theme="dark"] .menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Tabs */
+:root[data-theme="dark"] .tab {
+  color: var(--text-secondary);
+  border-bottom: 2px solid transparent;
+}
+
+:root[data-theme="dark"] .tab:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+:root[data-theme="dark"] .tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: rgba(102, 126, 234, 0.1);
+}
+
+/* Badges and pills */
+:root[data-theme="dark"] .badge,
+:root[data-theme="dark"] .pill {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Accordions */
+:root[data-theme="dark"] .accordion-item {
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+
+:root[data-theme="dark"] .accordion-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Pagination */
+:root[data-theme="dark"] .pagination-item {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+:root[data-theme="dark"] .pagination-item:hover:not(.active):not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--accent);
+}
+
+:root[data-theme="dark"] .pagination-item.active {
+  background: var(--gradient-primary);
+  color: white;
+  border-color: transparent;
+}
+
+/* Breadcrumbs */
+:root[data-theme="dark"] .breadcrumb {
+  color: var(--text-secondary);
+}
+
+:root[data-theme="dark"] .breadcrumb a {
+  color: var(--accent);
+}
+
+:root[data-theme="dark"] .breadcrumb a:hover {
+  color: var(--accent-dark);
+  text-decoration: underline;
+}
+
+/* Toast notifications */
+:root[data-theme="dark"] .toast {
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+}
+
+/* Popovers */
+:root[data-theme="dark"] .popover {
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  color: var(--text-primary);
+}
+
+/* Code blocks with syntax highlighting feel */
+:root[data-theme="dark"] code {
+  background: rgba(102, 126, 234, 0.1);
+  color: #9ecbff;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+:root[data-theme="dark"] pre {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  padding: 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+:root[data-theme="dark"] pre code {
+  background: transparent;
+  padding: 0;
+}
+
+/* Enhance visibility of required fields */
+:root[data-theme="dark"] .required::after,
+:root[data-theme="dark"] [required] + label::after {
+  color: var(--color-error);
+}
+
+/* Better form validation states */
+:root[data-theme="dark"] input:invalid:not(:placeholder-shown),
+:root[data-theme="dark"] textarea:invalid:not(:placeholder-shown) {
+  border-color: var(--color-error);
+}
+
+:root[data-theme="dark"] input:valid:not(:placeholder-shown),
+:root[data-theme="dark"] textarea:valid:not(:placeholder-shown) {
+  border-color: var(--color-success);
+}
+
+/* Subtle pattern overlay for depth */
+:root[data-theme="dark"] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: 
+    radial-gradient(circle at 20% 50%, rgba(102, 126, 234, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(118, 75, 162, 0.03) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Enhance gradient cards in dark mode */
+:root[data-theme="dark"] [style*="linear-gradient(135deg, #667eea"] {
+  box-shadow: 0 8px 32px rgba(102, 126, 234, 0.4);
+}
+
+:root[data-theme="dark"] [style*="linear-gradient(135deg, #22c55e"] {
+  box-shadow: 0 8px 32px rgba(34, 197, 94, 0.3);
+}
+
+:root[data-theme="dark"] [style*="linear-gradient(135deg, #f59e0b"] {
+  box-shadow: 0 8px 32px rgba(245, 158, 11, 0.3);
+}
+
+:root[data-theme="dark"] [style*="linear-gradient(135deg, #ef4444"] {
+  box-shadow: 0 8px 32px rgba(239, 68, 68, 0.3);
+}
+
+:root[data-theme="dark"] [style*="linear-gradient(135deg, #3b82f6"] {
+  box-shadow: 0 8px 32px rgba(59, 130, 246, 0.3);
+}
+
+/* Modal Components */
+:root[data-theme="dark"] .modal-overlay {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+:root[data-theme="dark"] .modal-close {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .modal-close:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+:root[data-theme="dark"] .card-title {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* Print styles for dark mode */
+@media print {
+  :root[data-theme="dark"] {
+    --bg: white;
+    --card: white;
+    --text-primary: black;
+    --text-secondary: #666;
+    --border: #ddd;
+  }
+  
+  :root[data-theme="dark"] * {
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+  }
+}

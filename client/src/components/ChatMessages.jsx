@@ -62,7 +62,7 @@ const InitialAvatar = ({ name, size = 'medium' }) => {
     )
 }
 
-export default function ChatMessages({ onClose, onUnreadCountChange }) {
+export default function ChatMessages({ onClose: _onClose, onUnreadCountChange }) {
     const [contacts, setContacts] = useState([])
     const [conversations, setConversations] = useState([])
     const [selectedContact, setSelectedContact] = useState(null)
@@ -187,7 +187,7 @@ export default function ChatMessages({ onClose, onUnreadCountChange }) {
         setMessages([])
     }
 
-    const handleBack = () => {
+    const _handleBack = () => {
         setSelectedContact(null)
         setMessages([])
         loadConversations()

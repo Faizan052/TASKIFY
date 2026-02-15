@@ -13,10 +13,10 @@ export default function ForgotPassword({ onClose, onSuccess }) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [message, setMessage] = useState('');
-    const [userType, setUserType] = useState('');
+    const [_userType, setUserType] = useState('');
     const [userName, setUserName] = useState('');
     const [userRole, setUserRole] = useState('');
-    const [requiresOTP, setRequiresOTP] = useState(false);
+    const [_requiresOTP, setRequiresOTP] = useState(false);
 
     const handleRequestReset = async (e) => {
         e.preventDefault();
@@ -116,7 +116,7 @@ export default function ForgotPassword({ onClose, onSuccess }) {
         setLoading(true);
 
         try {
-            const data = await apiFetch('/api/auth/forgot-password', {
+            await apiFetch('/api/auth/forgot-password', {
                 method: 'POST',
                 body: { email }
             });

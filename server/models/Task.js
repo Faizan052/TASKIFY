@@ -191,4 +191,12 @@ const taskSchema = new mongoose.Schema({
     timestamps: true
 });
 
+// Indexes for improved query performance
+taskSchema.index({ status: 1, createdAt: -1 });
+taskSchema.index({ currentStage: 1 });
+taskSchema.index({ createdBy: 1, status: 1 });
+taskSchema.index({ 'design.user': 1 });
+taskSchema.index({ 'development.user': 1 });
+taskSchema.index({ 'testing.user': 1 });
+
 module.exports = mongoose.model('Task', taskSchema);

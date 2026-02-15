@@ -1,0 +1,503 @@
+/* ============================================
+   GLOBAL STYLES - Base Theme Variables & Resets
+   ============================================ */
+
+/* Base theme variables */
+:root {
+  --bg: #f3f6fa;
+  --card: #ffffff;
+  --accent: #0b74de;
+  --accent-dark: #085cb0;
+  --muted: #6b7280;
+  --border: #e4e7ec;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --radius: 12px;
+  --transition: all 0.25s ease;
+
+  --page-max-width: 1100px;
+  --page-narrow-width: 520px;
+
+  /* Text colors */
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --text-tertiary: #9ca3af;
+  
+  /* Status colors */
+  --color-success: #22c55e;
+  --color-success-light: #d1fae5;
+  --color-warning: #f59e0b;
+  --color-warning-light: #fef3c7;
+  --color-error: #ef4444;
+  --color-error-light: #fee2e2;
+  --color-info: #3b82f6;
+  --color-info-light: #dbeafe;
+  
+  /* Gradient backgrounds */
+  --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --gradient-success: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  --gradient-warning: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  --gradient-error: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  --gradient-info: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  
+  /* Surface colors */
+  --surface-hover: #f8fafc;
+  --surface-active: #f1f5f9;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0b1220;
+  --card: #1a1f35;
+  --accent: #4aa3ff;
+  --accent-dark: #2f7fd6;
+  --muted: #94a3b8;
+  --border: rgba(255, 255, 255, 0.1);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+
+  /* Text colors */
+  --text-primary: rgba(255, 255, 255, 0.95);
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+  
+  /* Status colors - adjusted for dark mode */
+  --color-success: #34d399;
+  --color-success-light: rgba(52, 211, 153, 0.15);
+  --color-warning: #fbbf24;
+  --color-warning-light: rgba(251, 191, 36, 0.15);
+  --color-error: #f87171;
+  --color-error-light: rgba(248, 113, 113, 0.15);
+  --color-info: #60a5fa;
+  --color-info-light: rgba(96, 165, 250, 0.15);
+  
+  /* Gradient backgrounds - same but will show on dark bg */
+  --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --gradient-success: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+  --gradient-warning: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  --gradient-error: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
+  --gradient-info: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+  
+  /* Surface colors */
+  --surface-hover: rgba(255, 255, 255, 0.05);
+  --surface-active: rgba(255, 255, 255, 0.08);
+}
+
+/* ============================================
+   BASE RESET & BODY STYLES
+   ============================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', 'Segoe UI', Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: #111;
+  margin: 0;
+  padding: 0;
+  line-height: 1.6;
+}
+
+:root[data-theme="dark"] body {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+h1, h2, h3 {
+  margin-top: 0;
+  color: #0a0a0a;
+  letter-spacing: 0.3px;
+}
+
+:root[data-theme="dark"] h1,
+:root[data-theme="dark"] h2, 
+:root[data-theme="dark"] h3 {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* ============================================
+   CUSTOM SCROLLBAR STYLING
+   ============================================ */
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 10px;
+  transition: background 0.2s ease;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+:root[data-theme="dark"] .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+:root[data-theme="dark"] .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Default scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 10px;
+}
+
+:root[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, var(--accent) 0%, #764ba2 100%);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, #5a6fd8 0%, #6a3e92 100%);
+}
+
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 5px;
+}
+
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+.container {
+  min-width: 280px;
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  background: linear-gradient(rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.98)) padding-box,
+              linear-gradient(135deg, #667eea 0%, #764ba2 100%) border-box;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  padding: 20px;
+}
+
+.container:hover {
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.1);
+}
+
+/* Text utilities */
+.highlight {
+  background: linear-gradient(120deg, #fef3c7 0%, #fde68a 100%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.help {
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.help a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.2s ease;
+}
+
+.help a:hover {
+  color: var(--accent-dark);
+  text-decoration: underline;
+}
+
+/* List utilities */
+ul {
+  padding-left: 22px;
+}
+
+li {
+  margin-bottom: 8px;
+}
+
+/* Links */
+a {
+  color: var(--accent);
+  transition: color 0.2s ease;
+}
+
+:root[data-theme="dark"] a {
+  color: var(--accent);
+}
+
+a:hover {
+  color: var(--accent-dark);
+}
+
+:root[data-theme="dark"] a:hover {
+  color: var(--accent-dark);
+}
+
+/* ============================================
+   LOADING SPINNER
+   ============================================ */
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 16px;
+  border: 4px solid rgba(11, 116, 222, 0.2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.loading-glass {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  padding: 48px;
+  text-align: center;
+}
+
+:root[data-theme="dark"] .loading-glass {
+  background: rgba(15, 26, 43, 0.95);
+}
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sidebarEnterX {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes sidebarEnterY {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float {
+  0%, 100% { 
+    transform: translateY(0); 
+  }
+  50% { 
+    transform: translateY(-10px); 
+  }
+}
+
+@keyframes modalSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ============================================
+   SMOOTH THEME TRANSITIONS
+   ============================================ */
+
+* {
+  transition: background-color 0.3s ease, 
+              color 0.3s ease, 
+              border-color 0.3s ease,
+              box-shadow 0.3s ease;
+}
+
+*[style*="transform"],
+*[style*="translate"] {
+  transition: background-color 0.3s ease, 
+              color 0.3s ease, 
+              border-color 0.3s ease,
+              box-shadow 0.3s ease,
+              transform 0.2s ease !important;
+}
+
+/* ============================================
+   RESPONSIVE UTILITIES
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================
+   PRINT STYLES
+   ============================================ */
+
+@media print {
+  :root[data-theme="dark"] {
+    --bg: white;
+    --card: white;
+    --text-primary: black;
+    --text-secondary: #666;
+    --border: #ddd;
+  }
+  
+  :root[data-theme="dark"] * {
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+  }
+}
+
+/* ============================================
+   TEXT SELECTION
+   ============================================ */
+
+::selection {
+  background: rgba(102, 126, 234, 0.3);
+  color: inherit;
+}
+
+::-moz-selection {
+  background: rgba(102, 126, 234, 0.3);
+  color: inherit;
+}
+
+:root[data-theme="dark"] ::selection {
+  background: rgba(102, 126, 234, 0.4);
+  color: white;
+}
+
+:root[data-theme="dark"] ::-moz-selection {
+  background: rgba(102, 126, 234, 0.4);
+  color: white;
+}
+
+/* ============================================
+   DIVIDERS
+   ============================================ */
+
+hr {
+  border: 0;
+  height: 1px;
+  background: var(--border);
+  margin: 24px 0;
+}
+
+:root[data-theme="dark"] hr {
+  border-color: var(--border);
+  opacity: 0.5;
+}
+
+.divider-glass {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,0,0,0.1), transparent);
+  margin: 24px 0;
+}
+
+:root[data-theme="dark"] .divider-glass {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+}
+
+/* ============================================
+   SUBTLE PATTERN OVERLAY FOR DEPTH
+   ============================================ */
+
+:root[data-theme="dark"] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: 
+    radial-gradient(circle at 20% 50%, rgba(102, 126, 234, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(118, 75, 162, 0.03) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: -1;
+}

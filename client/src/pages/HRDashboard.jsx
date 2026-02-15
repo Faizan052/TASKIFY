@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch, clearSession, resolveAssetUrl } from '../api'
+import { useUnreadMessages } from '../hooks/useUnreadMessages'
+import { formatDate, getTaskStage, formatCategory, formatCategories, CATEGORY_OPTIONS } from '../utils/helpers'
 import ProfileSettings from '../components/ProfileSettings'
 import ChatMessages from '../components/ChatMessages'
 
-const emptyManagerForm = { name: '', email: '', password: '' }
+const emptyManagerForm = { name: '', email: '', password: '', categories: [] }
 const emptyProfileForm = { name: '', phone: '', department: '', profilePicture: null }
-const formatRoleLabel = (value) => (value ? value.charAt(0).toUpperCase() + value.slice(1) : '')
 const AUTO_REFRESH_INTERVAL = 30000
 
 export default function HRDashboard(){
@@ -18,7 +19,7 @@ export default function HRDashboard(){
 	const [error, setError] = useState(null)
 	const [message, setMessage] = useState('')
 	const [activeView, setActiveView] = useState('overview')
-	const [unreadMessages, setUnreadMessages] = useState(0)
+	const { unreadMessages } = useUnreadMessages(10000)
 	const [showProfileMenu, setShowProfileMenu] = useState(false)
 	const headerRef = useRef(null)
 	const [managerForm, setManagerForm] = useState(emptyManagerForm)
@@ -29,7 +30,7 @@ export default function HRDashboard(){
 	const [assignmentSelections, setAssignmentSelections] = useState({})
 	const [sendingToClientId, setSendingToClientId] = useState('')
 	const [profileForm, setProfileForm] = useState(emptyProfileForm)
-	const [updatingProfile, setUpdatingProfile] = useState(false)
+	const [_updatingProfile, setUpdatingProfile] = useState(false)
 	const [deletingManagerId, setDeletingManagerId] = useState(null)
 
 	const teamsByManager = useMemo(() => {
@@ -93,8 +94,11 @@ export default function HRDashboard(){
 	}
 
 	const handleEditManager = (manager) => {
+		const managerCategories = Array.isArray(manager.categories) && manager.categories.length > 0
+			? manager.categories
+			: (manager.category ? [manager.category] : [])
 		setEditingManagerId(manager._id)
-		setManagerForm({ name: manager.name, email: manager.email, password: '' })
+		setManagerForm({ name: manager.name, email: manager.email, password: '', categories: managerCategories })
 		setShowManagerForm(true)
 	}
 
@@ -112,7 +116,7 @@ export default function HRDashboard(){
 		}
 	}
 
-	const handleProfileUpdate = async (e) => {
+	const _handleProfileUpdate = async (e) => {
 		e.preventDefault()
 		setUpdatingProfile(true)
 		setError(null)
@@ -166,9 +170,17 @@ export default function HRDashboard(){
 		e.preventDefault()
 		setSubmittingManager(true); setMessage(''); setError(null)
 		try{
-			await apiFetch('/api/hr/managers', { method: 'POST', body: managerForm })
+			if (!Array.isArray(managerForm.categories) || managerForm.categories.length === 0) {
+				setError('Select at least one category for manager')
+				return
+			}
+			const endpoint = editingManagerId ? `/api/hr/managers/${editingManagerId}` : '/api/hr/managers'
+			const method = editingManagerId ? 'PUT' : 'POST'
+			await apiFetch(endpoint, { method, body: managerForm })
 			setManagerForm(emptyManagerForm)
-			setMessage('Manager created')
+			setEditingManagerId(null)
+			setShowManagerForm(false)
+			setMessage(editingManagerId ? 'Manager updated' : 'Manager created')
 			await refreshOverview()
 		}catch(err){ setError(err.message) }
 		finally{ setSubmittingManager(false) }
@@ -178,11 +190,40 @@ export default function HRDashboard(){
 		setAssignmentSelections(prev => ({ ...prev, [taskId]: { managerId } }))
 	}
 
+	const getUserCategories = (user) => {
+		if (!user) return []
+		if (Array.isArray(user.categories) && user.categories.length > 0) return user.categories
+		if (user.category) return [user.category]
+		return []
+	}
+
+	const toggleManagerCategory = (categoryValue) => {
+		setManagerForm((prev) => {
+			const current = Array.isArray(prev.categories) ? prev.categories : []
+			if (current.includes(categoryValue)) {
+				return { ...prev, categories: current.filter(item => item !== categoryValue) }
+			}
+			return { ...prev, categories: [...current, categoryValue] }
+		})
+	}
+
+	const getCategoryMatchedManagers = (task) => {
+		if (!overview?.managers) return []
+		if (!task?.category) return overview.managers
+		return overview.managers.filter(manager => getUserCategories(manager).includes(task.category))
+	}
+
 	const handleAssignTask = async (task) => {
 		const selection = assignmentSelections[task._id] || {}
 		const managerId = selection.managerId || (task.assignedTo ? task.assignedTo._id : '')
 		if (!managerId) {
 			setError('Choose a manager before assigning the task')
+			return
+		}
+		const selectedManager = (overview?.managers || []).find(manager => manager._id === managerId)
+		const selectedManagerCategories = getUserCategories(selectedManager)
+		if (task.category && selectedManager && !selectedManagerCategories.includes(task.category)) {
+			setError(`Selected manager categories (${formatCategories(selectedManagerCategories)}) do not include task category (${formatCategory(task.category)})`)
 			return
 		}
 		setAssigningTaskId(task._id); setError(null); setMessage('')
@@ -209,25 +250,18 @@ export default function HRDashboard(){
 		finally{ setSendingToClientId('') }
 	}
 
-	const formatDeadline = (value) => value ? new Date(value).toLocaleDateString() : '—'
-	const displayName = profile ? profile.name || profile.email || 'HR' : 'HR'
-
 	const getTaskStatusStage = (status) => {
-		const stages = {
-			'Client Requested': { stage: 'Client Request', progress: 5, color: '#f59e0b' },
-			'Awaiting Manager Assignment': { stage: 'Pending Assignment', progress: 10, color: '#f59e0b' },
-			'Design In Progress': { stage: 'Design Phase', progress: 25, color: '#3b82f6' },
-			'Design Completed - Pending Manager Review': { stage: 'Design Review', progress: 35, color: '#8b5cf6' },
-			'Development In Progress': { stage: 'Development Phase', progress: 50, color: '#10b981' },
-			'Development Completed - Pending Manager Review': { stage: 'Development Review', progress: 60, color: '#8b5cf6' },
-			'Testing In Progress': { stage: 'Testing Phase', progress: 75, color: '#3b82f6' },
-			'Testing Completed - Pending Manager Final Review': { stage: 'Final Review', progress: 85, color: '#8b5cf6' },
-			'Awaiting HR Review': { stage: 'HR Review', progress: 90, color: '#f59e0b' },
-			'Awaiting Client Review': { stage: 'Client Review', progress: 95, color: '#f59e0b' },
-			'Changes Requested': { stage: 'Changes Requested', progress: 40, color: '#f59e0b' },
-			'Completed': { stage: 'Completed', progress: 100, color: '#10b981' }
+		const stage = getTaskStage(status)
+		const hrOverrides = {
+			'Awaiting Client Review': { color: '#f59e0b' },
+			'Changes Requested': { label: 'Changes Requested', color: '#f59e0b' }
 		}
-		return stages[status] || { stage: status || 'Unknown', progress: 0, color: '#f59e0b' }
+		const override = hrOverrides[status] || {}
+		return {
+			stage: override.label || stage.label || status || 'Unknown',
+			progress: stage.progress,
+			color: override.color || stage.color || '#f59e0b'
+		}
 	}
 
 	return (
@@ -251,7 +285,7 @@ export default function HRDashboard(){
 							<span>Dashboard</span>
 						</button>
 
-						<div className="admin-nav-dropdown">
+						<div className="admin-nav-dropdown" onMouseEnter={(e) => e.currentTarget.classList.add('open')} onMouseLeave={(e) => e.currentTarget.classList.remove('open')}>
 							<button 
 								className={`admin-nav-btn ${['managers', 'requests', 'teams'].includes(activeView) ? 'active' : ''}`}
 						>
@@ -275,7 +309,7 @@ export default function HRDashboard(){
 						</div>
 					</div>
 
-					<div className="admin-nav-dropdown">
+					<div className="admin-nav-dropdown" onMouseEnter={(e) => e.currentTarget.classList.add('open')} onMouseLeave={(e) => e.currentTarget.classList.remove('open')}>
 						<button 
 							className={`admin-nav-btn ${['progress', 'review'].includes(activeView) ? 'active' : ''}`}
 						>
@@ -316,7 +350,7 @@ export default function HRDashboard(){
 	</header>
 
 	{/* Floating Profile Button */}
-	<div className="floating-profile-wrapper">
+	<div className="floating-profile-wrapper" onMouseEnter={() => setShowProfileMenu(true)} onMouseLeave={() => setShowProfileMenu(false)}>
 		<button className="floating-profile-btn" onClick={() => setShowProfileMenu(!showProfileMenu)}>
 			{profile?.profilePhoto ? (
 				<img src={resolveAssetUrl(profile.profilePhoto)} alt="Profile" className="profile-avatar" />
@@ -612,6 +646,7 @@ export default function HRDashboard(){
 																<h4 className="item-title" style={{margin: '0 0 4px 0'}}>{manager.name}</h4>
 																<div className="item-meta">
 																	<span>📧 {manager.email}</span>
+																	<span>🏷️ {formatCategories(getUserCategories(manager))}</span>
 																	{teamsByManager[manager._id] && (
 																		<span>👥 {teamsByManager[manager._id].length} {teamsByManager[manager._id].length === 1 ? 'team' : 'teams'}</span>
 																	)}
@@ -655,25 +690,32 @@ export default function HRDashboard(){
 										<ul>
 											{overview.pendingClientRequests.map(task => {
 												const assignment = assignmentSelections[task._id] || {}
+												const availableManagers = getCategoryMatchedManagers(task)
 												const clientName = task.createdBy ? task.createdBy.name : 'Client'
-												const deadlineLabel = formatDeadline(task.deadline)
+												const deadlineLabel = formatDate(task.deadline)
 												return (
 													<li key={task._id} style={{marginBottom: 8}}>
 														<div>
 															<strong>{task.title}</strong>
 															<span>{` — from ${clientName} (deadline ${deadlineLabel})`}</span>
+															<span>{` • Category: ${formatCategory(task.category)}`}</span>
 														</div>
 														<div className="small-row">
 															<select value={assignment.managerId || ''} onChange={e=>setAssignmentSelection(task._id, e.target.value)}>
 																<option value="">Select manager</option>
-																{overview.managers.map(manager => (
-																	<option key={manager._id} value={manager._id}>{manager.name}</option>
+																{availableManagers.map(manager => (
+																	<option key={manager._id} value={manager._id}>{manager.name} ({formatCategories(getUserCategories(manager))})</option>
 																))}
 															</select>
-															<button className="btn small" onClick={()=>handleAssignTask(task)} disabled={assigningTaskId === task._id}>
+															<button className="btn small" onClick={()=>handleAssignTask(task)} disabled={assigningTaskId === task._id || availableManagers.length === 0}>
 																{assigningTaskId === task._id ? 'Assigning...' : 'Assign'}
 															</button>
 														</div>
+														{availableManagers.length === 0 && (
+															<div style={{marginTop: 6, fontSize: 12, color: '#ef4444'}}>
+																No managers found for category {formatCategory(task.category)}.
+															</div>
+														)}
 													</li>
 												)
 											})}
@@ -831,7 +873,7 @@ export default function HRDashboard(){
 																</div>
 
 																<div style={{display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#64748b'}}>
-																	<span>📅 Deadline: {formatDeadline(task.deadline)}</span>
+																	<span>📅 Deadline: {formatDate(task.deadline)}</span>
 																	<span>🔄 {task.status}</span>
 																</div>
 															</div>
@@ -868,7 +910,7 @@ export default function HRDashboard(){
 															<div className="item-meta" style={{marginTop: 12}}>
 																<span>👔 Manager: {formatManagerName(task)}</span>
 																{task.assignedTeam && <span>👥 Team: {task.assignedTeam.name}</span>}
-																<span>📅 Deadline: {formatDeadline(task.deadline)}</span>
+																<span>📅 Deadline: {formatDate(task.deadline)}</span>
 															</div>
 															{Array.isArray(task.attachments) && task.attachments.length > 0 && (
 																<details style={{marginTop: 12, padding: 12, background: '#f8fafc', borderRadius: 8}}>
@@ -1009,6 +1051,31 @@ export default function HRDashboard(){
 											onChange={e => setManagerForm(prev => ({...prev, password: e.target.value}))} 
 											required={!editingManagerId} 
 										/>
+									</label>
+									<label>Categories (multiple)
+										<div style={{
+											marginTop: 8,
+											border: '1px solid #d1d5db',
+											borderRadius: 8,
+											padding: 10,
+											display: 'grid',
+											gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+											gap: 8
+										}}>
+											{CATEGORY_OPTIONS.map(option => (
+												<label key={option.value} style={{display: 'flex', alignItems: 'center', gap: 8, fontWeight: 500}}>
+													<input
+														type="checkbox"
+														checked={(managerForm.categories || []).includes(option.value)}
+														onChange={() => toggleManagerCategory(option.value)}
+													/>
+													{option.label}
+												</label>
+											))}
+										</div>
+										<div style={{marginTop: 6, fontSize: 12, color: '#475569'}}>
+											Selected: {formatCategories(managerForm.categories || [])}
+										</div>
 									</label>
 								</div>
 							</div>

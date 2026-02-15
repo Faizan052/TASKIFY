@@ -77,6 +77,7 @@ export default function ProfileSettings({
   }, [profile]);
 
   const themeLabel = useMemo(() => {
+	void themeVersion;
     const current = (typeof document !== 'undefined' && document.documentElement.dataset.theme)
       ? document.documentElement.dataset.theme
       : getPreferredTheme();

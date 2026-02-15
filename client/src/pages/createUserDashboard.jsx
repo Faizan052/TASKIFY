@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch, clearSession, resolveAssetUrl, uploadWithProgress } from '../api'
+import { useUnreadMessages } from '../hooks/useUnreadMessages'
+import { formatDate, formatRole, formatFileSize, getTaskStage } from '../utils/helpers'
 import { useUserWorkspace } from '../hooks/useUserWorkspace'
 import ProfileSettings from '../components/ProfileSettings'
 import ChatMessages from '../components/ChatMessages'
@@ -54,8 +56,6 @@ const toId = (value) => {
 	return ''
 }
 
-const formatRole = (role) => (role ? role.charAt(0).toUpperCase() + role.slice(1) : '')
-
 const formatPerson = (value) => {
 	if (!value) return '—'
 	if (typeof value === 'string') return 'Assigned'
@@ -65,12 +65,7 @@ const formatPerson = (value) => {
 	return '—'
 }
 
-const formatSize = (size) => {
-	if (typeof size !== 'number' || Number.isNaN(size)) return ''
-	if (size < 1024) return `${size} B`
-	if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-	return `${(size / (1024 * 1024)).toFixed(1)} MB`
-}
+const formatSize = (size) => formatFileSize(size)
 
 const formatSpeed = (bytesPerSecond) => {
 	if (typeof bytesPerSecond !== 'number' || Number.isNaN(bytesPerSecond) || !Number.isFinite(bytesPerSecond)) {
@@ -116,34 +111,20 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 		const [uploadProgress, setUploadProgress] = useState({})
 		const [notifications, setNotifications] = useState([])
 		const [notificationsLoading, setNotificationsLoading] = useState(true)
-		const [showNotifications, setShowNotifications] = useState(false)
-		const [unreadMessages, setUnreadMessages] = useState(0)
+		const [_showNotifications, _setShowNotifications] = useState(false)
+		const { unreadMessages } = useUnreadMessages(10000)
 
 		const taskList = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks])
 		const effectiveRole = role || (profile ? profile.role : '')
 		const assignmentKey = STAGE_KEY_BY_ROLE[effectiveRole] || null
 		const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications])
-	const getTaskStatusStage = (status) => {
-		const stages = {
-			'Awaiting Manager Assignment': { stage: 'Pending Assignment', progress: 10, color: '#f59e0b' },
-			'Design In Progress': { stage: 'Design Phase', progress: 25, color: '#3b82f6' },
-			'Design Completed - Pending Manager Review': { stage: 'Design Review', progress: 35, color: '#8b5cf6' },
-			'Development In Progress': { stage: 'Development Phase', progress: 50, color: '#10b981' },
-			'Development Completed - Pending Manager Review': { stage: 'Dev Review', progress: 65, color: '#8b5cf6' },
-			'Testing In Progress': { stage: 'Testing Phase', progress: 75, color: '#06b6d4' },
-			'Testing Completed - Pending Manager Final Review': { stage: 'Final Review', progress: 85, color: '#8b5cf6' },
-			'Awaiting HR Review': { stage: 'HR Review', progress: 90, color: '#f59e0b' },
-			'Awaiting Client Review': { stage: 'Client Review', progress: 95, color: '#ec4899' },
-			'Completed': { stage: 'Completed', progress: 100, color: '#22c55e' },
-			'Changes Requested': { stage: 'Revisions Needed', progress: 40, color: '#ef4444' }
-		}
-		return stages[status] || { stage: status, progress: 0, color: '#6b7280' }
-	}
-		const formatDate = useCallback((value, withTime = false) => {
-			if (!value) return '—'
-			const date = new Date(value)
-			if (Number.isNaN(date.getTime())) return '—'
-			return withTime ? date.toLocaleString() : date.toLocaleDateString()
+		const getTaskStatusStage = useCallback((status) => {
+			const stage = getTaskStage(status)
+			return {
+				stage: stage.label,
+				progress: stage.progress,
+				color: stage.color
+			}
 		}, [])
 
 		const loadNotifications = useCallback(async () => {
@@ -159,38 +140,32 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 		}, [setError])
 
 		useEffect(() => {
-			loadNotifications()
-			const id = setInterval(() => {
+			const refreshNotifications = () => {
+				if (typeof document !== 'undefined' && document.hidden) return
 				loadNotifications()
-			}, NOTIFICATION_REFRESH_MS)
-			return () => clearInterval(id)
-		}, [loadNotifications])
+			}
 
-		useEffect(() => {
-			const loadUnreadCount = async () => {
-				try {
-					const data = await apiFetch('/api/messages/unread-count')
-					setUnreadMessages(data.count || 0)
-				} catch (err) {
-					// Silent fail
+			refreshNotifications()
+			const id = setInterval(() => {
+				refreshNotifications()
+			}, NOTIFICATION_REFRESH_MS)
+			const onVisibilityChange = () => {
+				if (!document.hidden) {
+					refreshNotifications()
 				}
 			}
-			loadUnreadCount()
-			const id = setInterval(loadUnreadCount, 10000) // Check every 10 seconds
-			return () => clearInterval(id)
-		}, [])
+
+			document.addEventListener('visibilitychange', onVisibilityChange)
+
+			return () => {
+				clearInterval(id)
+				document.removeEventListener('visibilitychange', onVisibilityChange)
+			}
+		}, [loadNotifications])
 
 		const logout = useCallback(() => {
 			clearSession()
 			nav('/user/login')
-		}, [nav])
-
-		const goProfile = useCallback(() => {
-			nav('/profile')
-		}, [nav])
-
-		const goSubmitRequest = useCallback(() => {
-			nav('/request/new')
 		}, [nav])
 
 		const assignmentBelongsToUser = useCallback((assignment) => {
@@ -408,7 +383,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 					))}
 				</ul>
 			)
-		}, [formatDate, formatPerson])
+		}, [effectiveRole])
 
 		const renderChangeRequests = useCallback((task) => {
 			const changes = Array.isArray(task.changeRequests) ? task.changeRequests : []
@@ -426,7 +401,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 					</ul>
 				</details>
 			)
-		}, [formatDate])
+		}, [])
 
 			const renderStageSnapshot = useCallback((task) => {
 			const stageAssignments = task && task.stageAssignments ? task.stageAssignments : {}
@@ -447,7 +422,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 				return <div className="help">No stage updates yet.</div>
 			}
 			return <ul>{rows}</ul>
-			}, [formatDate, formatPerson, stageStatusLabel])
+			}, [])
 
 		const renderAssignmentSection = useCallback((title, collection, { allowUpload: allowUploadInSection = false } = {}) => {
 			if (!collection.length) return null
@@ -519,7 +494,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 					</div>
 				</div>
 			)
-		}, [formatDate, formatPerson, formatSpeed, getAssignment, handleUpload, renderAttachmentList, renderChangeRequests, stageStatusLabel, uploadProgress, uploadingTaskId])
+		}, [getAssignment, handleUpload, renderAttachmentList, renderChangeRequests, uploadProgress, uploadingTaskId])
 
 		const renderClientTasks = useCallback(() => (
 			<>
@@ -621,7 +596,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 					) : <div className="help">No completed projects yet.</div>}
 				</div>
 			</>
-		), [actingTaskId, clientAwaitingReview, clientCompleted, clientInDelivery, clientQueued, formatDate, formatPerson, handleClientAction, renderAttachmentList, renderChangeRequests, renderStageSnapshot])
+		), [actingTaskId, clientAwaitingReview, clientCompleted, clientInDelivery, clientQueued, handleClientAction, renderAttachmentList, renderChangeRequests, renderStageSnapshot])
 
 		const renderRoleAssignments = useCallback(() => (
 			<>
@@ -632,10 +607,9 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 			</>
 		), [activeAssignments, awaitingManagerReview, completedAssignments, queuedAssignments, renderAssignmentSection])
 
-		const displayName = profile ? profile.name || profile.email || 'User' : 'User'
 		const roleLabel = formatRole(effectiveRole)
 
-		const [activeView, setActiveView] = React.useState('tasks')
+			const [activeView, setActiveView] = React.useState('overview')
 		const [showViewDropdown, setShowViewDropdown] = useState(false)
 		const [showProfileMenu, setShowProfileMenu] = useState(false)
 		const headerRef = useRef(null)
@@ -688,7 +662,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 								</button>
 							)}
 
-							<div className="admin-nav-dropdown">
+							<div className="admin-nav-dropdown" onMouseEnter={() => setShowViewDropdown(true)} onMouseLeave={() => setShowViewDropdown(false)}>
 								<button 
 									className={`admin-nav-btn ${['progress', 'notifications'].includes(activeView) ? 'active' : ''}`}
 									onClick={() => setShowViewDropdown(!showViewDropdown)}
@@ -732,7 +706,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 				</header>
 
 				{/* Floating Profile Button */}
-				<div className="floating-profile-wrapper">
+				<div className="floating-profile-wrapper" onMouseEnter={() => setShowProfileMenu(true)} onMouseLeave={() => setShowProfileMenu(false)}>
 					<button 
 						className="floating-profile-btn"
 						onClick={() => setShowProfileMenu(!showProfileMenu)}
@@ -969,8 +943,8 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 												{taskList.slice(0, 5).map(task => {
 													const assignment = getAssignment(task)
 													const statusColor = assignment?.status === 'approved' ? '#22c55e' : 
-																	   assignment?.status === 'submitted' ? '#f59e0b' : 
-																	   assignment?.status === 'in_progress' ? '#3b82f6' : '#9ca3af'
+														assignment?.status === 'submitted' ? '#f59e0b' : 
+														assignment?.status === 'in_progress' ? '#3b82f6' : '#9ca3af'
 													
 													return (
 														<div key={task._id} style={{

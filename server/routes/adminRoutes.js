@@ -10,7 +10,10 @@ const Message = require('../models/Message');
 const Notification = require('../models/Notification');
 const OTP = require('../models/OTP');
 const PasswordReset = require('../models/PasswordReset');
-const { generateOTP, sendOTPEmail, sendWelcomeEmail, sendNewPasswordEmail } = require('../utils/emailService');
+const { generateOTP, sendOTPEmail } = require('../utils/emailService');
+const { trySendWelcomeEmail, trySendNewPasswordEmail } = require('../utils/emailNotifications');
+const { validateEmail } = require('../utils/validation');
+const { normalizeEmail, normalizeUsername, assertUniqueIdentity } = require('../utils/identity');
 const { protect, adminOnly } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 
@@ -32,17 +35,13 @@ router.post('/send-otp', asyncHandler(async (req, res) => {
     }
 
     // Validate email
-    if (!email) {
+    const emailValidation = validateEmail(email);
+    if (!emailValidation.valid) {
         res.status(400);
-        throw new Error('Email is required');
+        throw new Error(emailValidation.error);
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const trimmedEmail = email.trim().toLowerCase();
-    if (!emailRegex.test(trimmedEmail)) {
-        res.status(400);
-        throw new Error('Invalid email format');
-    }
+    const trimmedEmail = emailValidation.email;
 
     // Generate OTP
     const otp = generateOTP();
@@ -69,6 +68,8 @@ router.post('/send-otp', asyncHandler(async (req, res) => {
 // Admin Registration (POST) - Only allowed if no admin exists and OTP is verified
 router.post('/register', asyncHandler(async (req, res) => {
     const { name, username, email, password } = req.body;
+    const normalizedUsername = normalizeUsername(username);
+    const normalizedEmail = normalizeEmail(email);
 
     // Check if admin already exists
     const adminCount = await Admin.countDocuments();
@@ -84,28 +85,29 @@ router.post('/register', asyncHandler(async (req, res) => {
     }
 
     // Check if username is already taken
-    const existingAdmin = await Admin.findOne({ username });
-    if (existingAdmin) {
+    try {
+        await assertUniqueIdentity({ email: normalizedEmail, username: normalizedUsername });
+    } catch (identityError) {
         res.status(400);
-        throw new Error('Username already exists');
+        throw new Error(identityError.message);
     }
 
     // Create admin
     const admin = await Admin.create({
-        username: username.trim(),
-        email: email?.trim() || '',
+        username: normalizedUsername,
+        email: normalizedEmail || '',
         password,
         phone: '',
         department: ''
     });
 
     if (admin) {
-        // Send welcome email
-        try {
-            await sendWelcomeEmail(admin.email, admin.username, 'admin');
-        } catch (emailError) {
-            console.log('Welcome email failed but registration successful:', emailError);
-        }
+        await trySendWelcomeEmail({
+            email: admin.email,
+            name: admin.username,
+            role: 'admin',
+            errorMessage: 'Welcome email failed but registration successful:'
+        });
 
         res.status(201).json({
             _id: admin._id,
@@ -122,8 +124,9 @@ router.post('/register', asyncHandler(async (req, res) => {
 // Admin Login (POST)
 router.post('/login', asyncHandler(async (req, res) => {
     const { username, password } = req.body;
+    const normalizedUsername = normalizeUsername(username);
 
-    const admin = await Admin.findOne({ username });
+    const admin = await Admin.findOne({ username: normalizedUsername });
     
     if (admin && (await admin.matchPassword(password))) {
         res.json({
@@ -181,13 +184,15 @@ router.put('/profile/basic', protect, adminOnly, upload.single('profilePhoto'), 
     }
 
     const { username, phone, department } = req.body;
-    if (username && username !== admin.username) {
-        const exists = await Admin.findOne({ username });
-        if (exists && exists._id.toString() !== admin._id.toString()) {
+    const nextUsername = username ? normalizeUsername(username) : admin.username;
+    if (nextUsername && nextUsername !== admin.username) {
+        try {
+            await assertUniqueIdentity({ username: nextUsername, excludeAdminId: admin._id });
+        } catch (identityError) {
             res.status(400);
-            throw new Error('Username already taken');
+            throw new Error(identityError.message);
         }
-        admin.username = username;
+        admin.username = nextUsername;
     }
 
     if (phone !== undefined) {
@@ -247,17 +252,27 @@ router.put('/profile', protect, adminOnly, asyncHandler(async (req, res) => {
 
     const { username, email, password, phone, department } = req.body;
 
-    if (username && username !== admin.username) {
-        const exists = await Admin.findOne({ username });
-        if (exists && exists._id.toString() !== admin._id.toString()) {
+    const nextUsername = username ? normalizeUsername(username) : admin.username;
+    const nextEmail = email !== undefined ? normalizeEmail(email) : admin.email;
+
+    if (nextUsername && nextUsername !== admin.username) {
+        try {
+            await assertUniqueIdentity({ username: nextUsername, excludeAdminId: admin._id });
+        } catch (identityError) {
             res.status(400);
-            throw new Error('Username already taken');
+            throw new Error(identityError.message);
         }
-        admin.username = username;
+        admin.username = nextUsername;
     }
 
     if (email !== undefined) {
-        admin.email = email;
+        try {
+            await assertUniqueIdentity({ email: nextEmail, excludeAdminId: admin._id });
+        } catch (identityError) {
+            res.status(400);
+            throw new Error(identityError.message);
+        }
+        admin.email = nextEmail;
     }
 
     if (phone !== undefined) {
@@ -305,12 +320,14 @@ router.get('/login', (req, res) => {
 
 // Create new user
 router.post('/users', protect, adminOnly, asyncHandler(async (req, res) => {
-    const { name, email, password } = req.body;
+    const { name, password } = req.body;
+    const email = normalizeEmail(req.body.email);
 
-    const userExists = await User.findOne({ email });
-    if (userExists) {
+    try {
+        await assertUniqueIdentity({ email });
+    } catch (identityError) {
         res.status(400);
-        throw new Error('User already exists');
+        throw new Error(identityError.message);
     }
 
     const user = await User.create({
@@ -334,21 +351,25 @@ router.post('/users', protect, adminOnly, asyncHandler(async (req, res) => {
 // Admin: Manage HR users (HRs are stored in User collection with role 'hr')
 // Create HR
 router.post('/hr', protect, adminOnly, asyncHandler(async (req, res) => {
-    const { name, email, password } = req.body;
+    const { name, password } = req.body;
+    const email = normalizeEmail(req.body.email);
 
-    const userExists = await User.findOne({ email });
-    if (userExists) {
+    try {
+        await assertUniqueIdentity({ email });
+    } catch (identityError) {
         res.status(400);
-        throw new Error('User already exists');
+        throw new Error(identityError.message);
     }
 
     const user = await User.create({ name, email, password, role: 'hr' });
     if (user) {
-        try {
-            await sendWelcomeEmail(user.email, user.name, 'hr', password);
-        } catch (emailError) {
-            console.log('Welcome email failed but HR created:', emailError);
-        }
+        await trySendWelcomeEmail({
+            email: user.email,
+            name: user.name,
+            role: 'hr',
+            password,
+            errorMessage: 'Welcome email failed but HR created:'
+        });
 
         res.status(201).json({ _id: user._id, name: user.name, email: user.email, role: user.role });
     } else {
@@ -372,18 +393,29 @@ router.put('/hr/:id', protect, adminOnly, asyncHandler(async (req, res) => {
     }
 
     hr.name = req.body.name || hr.name;
-    hr.email = req.body.email || hr.email;
+    const nextEmail = req.body.email !== undefined ? normalizeEmail(req.body.email) : hr.email;
+    if (nextEmail !== hr.email) {
+        try {
+            await assertUniqueIdentity({ email: nextEmail, excludeUserId: hr._id });
+        } catch (identityError) {
+            res.status(400);
+            throw new Error(identityError.message);
+        }
+    }
+    hr.email = nextEmail;
     const passwordProvided = !!(req.body.password);
     if (passwordProvided) hr.password = req.body.password;
 
     const updated = await hr.save();
 
     if (passwordProvided) {
-        try {
-            await sendNewPasswordEmail(updated.email, updated.name, req.body.password, 'admin');
-        } catch (emailError) {
-            console.log('Failed to send updated credentials email to HR:', emailError);
-        }
+        await trySendNewPasswordEmail({
+            email: updated.email,
+            name: updated.name,
+            password: req.body.password,
+            role: 'admin',
+            errorMessage: 'Failed to send updated credentials email to HR:'
+        });
     }
 
     res.json({ _id: updated._id, name: updated.name, email: updated.email });
@@ -426,7 +458,16 @@ router.put('/users/:id', protect, adminOnly, asyncHandler(async (req, res) => {
     }
 
     user.name = req.body.name || user.name;
-    user.email = req.body.email || user.email;
+    const nextEmail = req.body.email !== undefined ? normalizeEmail(req.body.email) : user.email;
+    if (nextEmail !== user.email) {
+        try {
+            await assertUniqueIdentity({ email: nextEmail, excludeUserId: user._id });
+        } catch (identityError) {
+            res.status(400);
+            throw new Error(identityError.message);
+        }
+    }
+    user.email = nextEmail;
     if (req.body.password) user.password = req.body.password;
 
     const updated = await user.save();
@@ -747,7 +788,13 @@ router.post('/reset-hr-password', protect, adminOnly, asyncHandler(async (req, r
     await hrUser.save();
 
     // Send email to HR with new password
-    await sendNewPasswordEmail(hrUser.email, hrUser.name, newPassword, 'hr');
+    await trySendNewPasswordEmail({
+        email: hrUser.email,
+        name: hrUser.name,
+        password: newPassword,
+        role: 'hr',
+        errorMessage: 'Failed to send new password email to HR:'
+    });
 
     // Update reset request status
     resetRequest.status = 'completed';

@@ -41,13 +41,31 @@ const dedupeTasks = (tasks) => {
 
 const formatRoleLabel = (value) => value ? value.charAt(0).toUpperCase() + value.slice(1) : '';
 
+const getUserCategories = (user) => {
+    if (Array.isArray(user?.categories) && user.categories.length > 0) {
+        return user.categories;
+    }
+    if (user?.category) {
+        return [user.category];
+    }
+    return [];
+};
+
+const hasCategoryOverlap = (left = [], right = []) => {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length === 0 || right.length === 0) {
+        return false;
+    }
+    const rightSet = new Set(right);
+    return left.some(item => rightSet.has(item));
+};
+
 const findRoleUserByEmail = async ({ email, role, res }) => {
     const trimmed = (email || '').trim().toLowerCase();
     if (!trimmed) {
         res.status(400);
         throw new Error(`Provide ${formatRoleLabel(role)} email`);
     }
-    const user = await User.findOne({ email: trimmed, role }).select('_id name email role');
+    const user = await User.findOne({ email: trimmed, role }).select('_id name email role category categories');
     if (!user) {
         res.status(404);
         throw new Error(`${formatRoleLabel(role)} with email ${trimmed} not found`);
@@ -69,6 +87,17 @@ router.post('/teams', protect, roleRequired('manager'), asyncHandler(async (req,
     const developer = await findRoleUserByEmail({ email: developerEmail, role: 'developer', res });
     const tester = await findRoleUserByEmail({ email: testerEmail, role: 'tester', res });
 
+    const managerCategories = getUserCategories(req.user);
+    if (!managerCategories.length) {
+        res.status(400);
+        throw new Error('Manager categories are missing. Ask HR to update your categories.');
+    }
+    const mismatchedMembers = [designer, developer, tester].filter(member => !hasCategoryOverlap(getUserCategories(member), managerCategories));
+    if (mismatchedMembers.length > 0) {
+        res.status(400);
+        throw new Error('All team members must share at least one category with the manager');
+    }
+
     const uniqueMembers = new Map();
     [designer, developer, tester].forEach(member => {
         const key = member._id.toString();
@@ -85,13 +114,13 @@ router.post('/teams', protect, roleRequired('manager'), asyncHandler(async (req,
         members: Array.from(uniqueMembers.values())
     });
 
-    const populated = await Team.findById(team._id).populate('members', 'name email role');
+    const populated = await Team.findById(team._id).populate('members', 'name email role category');
     res.status(201).json(populated);
 }));
 
 // Manager lists their teams
 router.get('/teams', protect, roleRequired('manager'), asyncHandler(async (req, res) => {
-    const teams = await Team.find({ manager: req.user._id }).populate('members', 'name email role');
+    const teams = await Team.find({ manager: req.user._id }).populate('members', 'name email role category');
     res.json(teams);
 }));
 
@@ -115,6 +144,9 @@ router.post('/teams/:teamId/members', protect, roleRequired('manager'), asyncHan
 
     if (!member) { res.status(404); throw new Error('User not found'); }
     if (!['developer','designer','tester'].includes(member.role)) { res.status(400); throw new Error('Member role not allowed for teams'); }
+    const managerCategories = getUserCategories(req.user);
+    if (!managerCategories.length) { res.status(400); throw new Error('Manager categories are missing. Ask HR to update your categories.'); }
+    if (!hasCategoryOverlap(getUserCategories(member), managerCategories)) { res.status(400); throw new Error('Member must share at least one category with manager categories'); }
 
     if (team.members.includes(member._id)) {
         res.status(400); throw new Error('Member already in team');
@@ -122,7 +154,7 @@ router.post('/teams/:teamId/members', protect, roleRequired('manager'), asyncHan
 
     team.members.push(member._id);
     await team.save();
-    const populated = await Team.findById(team._id).populate('members', 'name email role');
+    const populated = await Team.findById(team._id).populate('members', 'name email role category');
     res.json(populated);
 }));
 
@@ -135,7 +167,7 @@ router.delete('/teams/:teamId/members/:memberId', protect, roleRequired('manager
 
     team.members = team.members.filter(m => m.toString() !== memberId);
     await team.save();
-    const populated = await Team.findById(team._id).populate('members', 'name email role');
+    const populated = await Team.findById(team._id).populate('members', 'name email role category');
     res.json(populated);
 }));
 
@@ -171,7 +203,7 @@ router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(a
     }
 
     const team = await Team.findOne({ _id: normalizedTeamId, manager: req.user._id })
-        .populate('members', 'name email role');
+        .populate('members', 'name email role category');
 
     if (!team) {
         res.status(403);
@@ -206,6 +238,23 @@ router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(a
     const designer = findMemberByRole('designer');
     const developer = findMemberByRole('developer');
     const tester = findMemberByRole('tester');
+
+    const managerCategories = getUserCategories(req.user);
+    if (!managerCategories.length) {
+        res.status(400);
+        throw new Error('Manager categories are missing. Ask HR to update your categories.');
+    }
+    if (task.category && !managerCategories.includes(task.category)) {
+        res.status(400);
+        throw new Error(`Task category (${task.category}) is not included in your manager categories`);
+    }
+
+    const stageMembers = [designer, developer, tester];
+    const mismatchedByCategory = stageMembers.filter(member => !getUserCategories(member).includes(task.category));
+    if (task.category && mismatchedByCategory.length > 0) {
+        res.status(400);
+        throw new Error(`All assigned team members must include task category (${task.category})`);
+    }
 
     const ensureStageStructure = () => {
         const defaultStage = () => ({
@@ -263,12 +312,12 @@ router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(a
     task.markModified('stageAssignments');
 
     const updated = await task.save();
-    await updated.populate('assignedTo', 'name email role');
+    await updated.populate('assignedTo', 'name email role category');
     await updated.populate('assignedTeam', 'name');
     await updated.populate('manager', 'name email');
-    await updated.populate({ path: 'stageAssignments.designer.user', select: 'name email role' });
-    await updated.populate({ path: 'stageAssignments.developer.user', select: 'name email role' });
-    await updated.populate({ path: 'stageAssignments.tester.user', select: 'name email role' });
+    await updated.populate({ path: 'stageAssignments.designer.user', select: 'name email role category' });
+    await updated.populate({ path: 'stageAssignments.developer.user', select: 'name email role category' });
+    await updated.populate({ path: 'stageAssignments.tester.user', select: 'name email role category' });
 
     await notifyUsers({
         recipients: [designer._id],
@@ -310,13 +359,13 @@ router.get('/tasks', protect, roleRequired('manager'), asyncHandler(async (req, 
     }
 
     const tasks = await Task.find({ $or: orConditions })
-        .populate('assignedTo', 'name email role')
+        .populate('assignedTo', 'name email role category')
         .populate('assignedTeam', 'name')
-        .populate('manager', 'name email')
-        .populate('createdBy', 'username name email role')
-        .populate({ path: 'stageAssignments.designer.user', select: 'name email role' })
-        .populate({ path: 'stageAssignments.developer.user', select: 'name email role' })
-        .populate({ path: 'stageAssignments.tester.user', select: 'name email role' })
+        .populate('manager', 'name email role category')
+        .populate('createdBy', 'username name email role category')
+        .populate({ path: 'stageAssignments.designer.user', select: 'name email role category' })
+        .populate({ path: 'stageAssignments.developer.user', select: 'name email role category' })
+        .populate({ path: 'stageAssignments.tester.user', select: 'name email role category' })
         .sort({ createdAt: -1 });
 
     res.json(dedupeTasks(tasks));
@@ -412,10 +461,10 @@ router.put('/tasks/:id', protect, roleRequired('manager'), asyncHandler(async (r
     task.assignedTo = nextAssignedTo ? nextAssignedTo : null;
 
     const updated = await task.save();
-    await updated.populate('assignedTo', 'name email role');
+    await updated.populate('assignedTo', 'name email role category');
     await updated.populate('assignedTeam', 'name');
-    await updated.populate('manager', 'name email');
-    await updated.populate('createdBy', 'username name email role');
+    await updated.populate('manager', 'name email role category');
+    await updated.populate('createdBy', 'username name email role category');
 
     res.json(updated);
 }));

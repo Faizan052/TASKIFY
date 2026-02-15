@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch, clearSession } from '../api'
+import { formatRole } from '../utils/helpers'
 import ProfileSettings from '../components/ProfileSettings'
-
-const formatRoleLabel = (value) => (value ? value.charAt(0).toUpperCase() + value.slice(1) : '')
 
 const routeForRole = (role) => {
 	switch(role){
@@ -30,7 +29,7 @@ export default function UserProfile(){
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState(null)
 
-	const roleLabel = useMemo(()=>formatRoleLabel(profile ? profile.role : ''), [profile])
+	const roleLabel = useMemo(()=>formatRole(profile ? profile.role : ''), [profile])
 	const displayName = profile && profile.name ? profile.name : (profile && profile.email ? profile.email : 'User')
 
 	const loadProfile = async () => {

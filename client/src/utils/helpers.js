@@ -16,6 +16,30 @@ export const formatRole = (role) => {
   return role.charAt(0).toUpperCase() + role.slice(1)
 }
 
+export const CATEGORY_OPTIONS = [
+  { value: 'website', label: 'Website' },
+  { value: 'mobile-app', label: 'Mobile App' },
+  { value: 'desktop-app', label: 'Desktop App' },
+  { value: 'testing', label: 'Testing' },
+  { value: 'updation', label: 'Updation' },
+  { value: 'design', label: 'Design' },
+  { value: 'api', label: 'API' },
+  { value: 'database', label: 'Database' },
+  { value: 'other', label: 'Other' }
+]
+
+export const formatCategory = (category) => {
+  if (!category) return 'Unassigned'
+  const matched = CATEGORY_OPTIONS.find(item => item.value === category)
+  if (matched) return matched.label
+  return category.replace(/-/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+export const formatCategories = (categories) => {
+  if (!Array.isArray(categories) || categories.length === 0) return 'Unassigned'
+  return categories.map((category) => formatCategory(category)).join(', ')
+}
+
 // File size formatting helper
 export const formatFileSize = (bytes) => {
   if (typeof bytes !== 'number' || isNaN(bytes)) return ''
@@ -52,6 +76,7 @@ export const isValidEmail = (email) => {
 
 // Task status stages with progress info
 export const TASK_STAGES = {
+  'Client Requested': { label: 'Client Request', progress: 5, color: '#f59e0b' },
   'Awaiting Manager Assignment': { label: 'Pending Assignment', progress: 10, color: '#f59e0b' },
   'Design In Progress': { label: 'Design Phase', progress: 25, color: '#3b82f6' },
   'Design Completed - Pending Manager Review': { label: 'Design Review', progress: 35, color: '#8b5cf6' },

@@ -7,28 +7,42 @@ const Task = require('../models/Task');
 const Team = require('../models/Team');
 const Notification = require('../models/Notification');
 const OTP = require('../models/OTP');
-const { generateOTP, sendOTPEmail, sendWelcomeEmail } = require('../utils/emailService');
+const { generateOTP, sendOTPEmail } = require('../utils/emailService');
+const { trySendWelcomeEmail } = require('../utils/emailNotifications');
+const { analyzeProjectRequest } = require('../utils/aiService');
+const { validateEmail } = require('../utils/validation');
+const { normalizeEmail, assertUniqueIdentity } = require('../utils/identity');
 const upload = require('../middleware/upload');
 const { protect } = require('../middleware/auth');
 const { roleRequired } = require('../middleware/roles');
 const { STATUS, STAGE, setTaskState, notifyUsers, notifyRoles } = require('../utils/taskWorkflow');
 
+const CATEGORY_OPTIONS = ['website', 'mobile-app', 'desktop-app', 'testing', 'updation', 'design', 'api', 'database', 'other'];
+const ROLES_REQUIRING_CATEGORY = ['developer', 'designer', 'tester'];
+
+const normalizeCategories = (value) => {
+    if (Array.isArray(value)) {
+        return value.map(item => (item || '').toString().trim()).filter(Boolean);
+    }
+    if (typeof value === 'string' && value.trim()) {
+        return [value.trim()];
+    }
+    return [];
+};
+
 // Send OTP for user registration (POST)
 router.post('/send-otp', asyncHandler(async (req, res) => {
     const { email, name, role } = req.body;
+    const categories = normalizeCategories(req.body.categories ?? req.body.category);
 
     // Validate email
-    if (!email) {
+    const emailValidation = validateEmail(email);
+    if (!emailValidation.valid) {
         res.status(400);
-        throw new Error('Email is required');
+        throw new Error(emailValidation.error);
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const trimmedEmail = email.trim().toLowerCase();
-    if (!emailRegex.test(trimmedEmail)) {
-        res.status(400);
-        throw new Error('Invalid email format');
-    }
+    const trimmedEmail = normalizeEmail(emailValidation.email);
 
     // Validate role
     const allowed = ['developer','designer','tester','client'];
@@ -37,11 +51,24 @@ router.post('/send-otp', asyncHandler(async (req, res) => {
         throw new Error('Invalid role');
     }
 
+    if (ROLES_REQUIRING_CATEGORY.includes(role)) {
+        if (!categories.length) {
+            res.status(400);
+            throw new Error('At least one category is required for this role');
+        }
+        const invalidCategories = categories.filter(item => !CATEGORY_OPTIONS.includes(item));
+        if (invalidCategories.length > 0) {
+            res.status(400);
+            throw new Error('Invalid categories provided');
+        }
+    }
+
     // Check if user already exists
-    const exists = await User.findOne({ email: trimmedEmail });
-    if (exists) {
+    try {
+        await assertUniqueIdentity({ email: trimmedEmail });
+    } catch (identityError) {
         res.status(400);
-        throw new Error('User already exists with this email');
+        throw new Error(identityError.message);
     }
 
     // Generate OTP
@@ -69,6 +96,7 @@ router.post('/send-otp', asyncHandler(async (req, res) => {
 // Public registration for developer/designer/tester/client
 router.post('/register', asyncHandler(async (req, res) => {
     const { name, email, password, role, otp } = req.body;
+    const categories = normalizeCategories(req.body.categories ?? req.body.category);
     
     // Validation: Check required fields
     if (!name || !email || !password || !role || !otp) {
@@ -85,7 +113,7 @@ router.post('/register', asyncHandler(async (req, res) => {
     
     // Validation: Email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedEmail = normalizeEmail(email);
     if (!emailRegex.test(trimmedEmail)) {
         res.status(400);
         throw new Error('Invalid email format');
@@ -116,6 +144,18 @@ router.post('/register', asyncHandler(async (req, res) => {
         throw new Error('Invalid role for self-registration');
     }
 
+    if (ROLES_REQUIRING_CATEGORY.includes(role)) {
+        if (!categories.length) {
+            res.status(400);
+            throw new Error('At least one category is required for this role');
+        }
+        const invalidCategories = categories.filter(item => !CATEGORY_OPTIONS.includes(item));
+        if (invalidCategories.length > 0) {
+            res.status(400);
+            throw new Error('Invalid categories provided');
+        }
+    }
+
     // Verify OTP
     const otpRecord = await OTP.findOne({ 
         email: trimmedEmail, 
@@ -130,10 +170,11 @@ router.post('/register', asyncHandler(async (req, res) => {
     }
 
     // Check if user already exists
-    const exists = await User.findOne({ email: trimmedEmail });
-    if (exists) {
+    try {
+        await assertUniqueIdentity({ email: trimmedEmail });
+    } catch (identityError) {
         res.status(400);
-        throw new Error('User already exists with this email');
+        throw new Error(identityError.message);
     }
 
     // Create user with validated data
@@ -141,25 +182,29 @@ router.post('/register', asyncHandler(async (req, res) => {
         name: trimmedName, 
         email: trimmedEmail, 
         password, 
-        role 
+        role,
+        categories: ROLES_REQUIRING_CATEGORY.includes(role) ? categories : [],
+        category: ROLES_REQUIRING_CATEGORY.includes(role) ? (categories[0] || '') : ''
     });
     
     // Delete used OTP
     await OTP.deleteOne({ _id: otpRecord._id });
     
     if (user) {
-        // Send welcome email
-        try {
-            await sendWelcomeEmail(user.email, user.name, user.role);
-        } catch (emailError) {
-            console.log('Welcome email failed but registration successful:', emailError);
-        }
+        await trySendWelcomeEmail({
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            errorMessage: 'Welcome email failed but registration successful:'
+        });
 
         res.status(201).json({ 
             _id: user._id, 
             name: user.name, 
             email: user.email, 
             role: user.role,
+            categories: user.categories || [],
+            category: user.category,
             message: 'Registration successful'
         });
     } else {
@@ -179,7 +224,7 @@ router.post('/login', asyncHandler(async (req, res) => {
     }
     
     // Sanitize email (keep case for backward compatibility with existing users)
-    const trimmedEmail = email.trim();
+    const trimmedEmail = normalizeEmail(email);
 
     const user = await User.findOne({ email: trimmedEmail });
     
@@ -195,6 +240,8 @@ router.post('/login', asyncHandler(async (req, res) => {
             name: user.name,
             email: user.email,
             role: user.role,
+            categories: user.categories || [],
+            category: user.category,
             token: jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
                 expiresIn: '30d'
             })
@@ -623,210 +670,25 @@ router.post('/analyze-request', protect, roleRequired('client'), upload.single('
         res.status(400);
         throw new Error('Deadline is required for analysis');
     }
-
-    // Calculate days until deadline
     const deadlineDate = new Date(deadline);
-    const today = new Date();
-    const diffTime = deadlineDate - today;
-    const daysAvailable = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    // Enhanced AI Analysis
-    const fileSize = req.file.size;
-    const fileSizeMB = fileSize / (1024 * 1024);
-    const fileName = req.file.originalname.toLowerCase();
-
-    // Complexity scoring system
-    let complexityScore = 0;
-    let baseEstimate = 14;
-
-    // Category-based estimates with more intelligence
-    const categoryData = {
-        'website': { 
-            baseMin: 14, baseMax: 45, weight: 1.0,
-            keywords: ['responsive', 'database', 'api', 'admin', 'payment', 'authentication', 'dashboard'],
-            complexFactors: { responsive: 2, database: 5, api: 4, admin: 3, payment: 7, authentication: 4, dashboard: 4 }
-        },
-        'mobile-app': { 
-            baseMin: 21, baseMax: 60, weight: 1.3,
-            keywords: ['ios', 'android', 'native', 'push', 'camera', 'gps', 'payment', 'offline'],
-            complexFactors: { native: 7, push: 3, camera: 4, gps: 3, payment: 7, offline: 5 }
-        },
-        'desktop-app': { 
-            baseMin: 21, baseMax: 60, weight: 1.2,
-            keywords: ['windows', 'mac', 'linux', 'installer', 'database', 'sync'],
-            complexFactors: { multiplatform: 10, installer: 3, database: 5, sync: 6 }
-        },
-        'testing': { 
-            baseMin: 7, baseMax: 14, weight: 0.5,
-            keywords: ['automated', 'integration', 'unit', 'load', 'security'],
-            complexFactors: { automated: 2, integration: 3, load: 4, security: 5 }
-        },
-        'updation': { 
-            baseMin: 3, baseMax: 14, weight: 0.6,
-            keywords: ['migration', 'refactor', 'upgrade', 'dependency'],
-            complexFactors: { migration: 5, refactor: 7, upgrade: 3, dependency: 2 }
-        },
-        'design': { 
-            baseMin: 7, baseMax: 21, weight: 0.8,
-            keywords: ['prototype', 'animation', 'branding', 'mockup', 'illustration'],
-            complexFactors: { prototype: 2, animation: 4, branding: 5, illustration: 3 }
-        },
-        'api': { 
-            baseMin: 10, baseMax: 30, weight: 0.9,
-            keywords: ['rest', 'graphql', 'websocket', 'authentication', 'documentation'],
-            complexFactors: { rest: 2, graphql: 5, websocket: 6, authentication: 4, documentation: 2 }
-        },
-        'database': { 
-            baseMin: 7, baseMax: 21, weight: 0.8,
-            keywords: ['migration', 'optimization', 'replication', 'backup', 'sharding'],
-            complexFactors: { migration: 4, optimization: 3, replication: 6, backup: 2, sharding: 8 }
-        },
-        'other': { baseMin: 14, baseMax: 30, weight: 1.0, keywords: [], complexFactors: {} }
-    };
-
-    const catData = categoryData[category] || categoryData['other'];
-
-    // Analyze description for complexity keywords
-    const fullText = `${title} ${description}`.toLowerCase();
-    let keywordMatches = 0;
-
-    if (catData.keywords && catData.keywords.length > 0) {
-        catData.keywords.forEach(keyword => {
-            if (fullText.includes(keyword)) {
-                keywordMatches++;
-                complexityScore += catData.complexFactors[keyword] || 2;
-            }
-        });
+    if (Number.isNaN(deadlineDate.getTime())) {
+        res.status(400);
+        throw new Error('Provide a valid deadline for analysis');
     }
 
-    // File size intelligence
-    if (fileSizeMB > 10) {
-        complexityScore += 15; // Very detailed requirements
-    } else if (fileSizeMB > 5) {
-        complexityScore += 10;
-    } else if (fileSizeMB > 2) {
-        complexityScore += 5;
-    } else if (fileSizeMB < 0.1) {
-        complexityScore -= 5; // Very brief, possibly simple
-    }
-
-    // File type intelligence
-    if (fileName.endsWith('.pdf')) {
-        complexityScore += 2; // PDFs usually detailed
-    } else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
-        complexityScore += 3; // Word docs often very detailed
-    }
-
-    // Calculate base estimate
-    if (complexityScore > 25) {
-        baseEstimate = catData.baseMax;
-    } else if (complexityScore > 15) {
-        baseEstimate = Math.ceil((catData.baseMin + catData.baseMax) * 0.7);
-    } else if (complexityScore > 5) {
-        baseEstimate = Math.ceil((catData.baseMin + catData.baseMax) / 2);
-    } else {
-        baseEstimate = catData.baseMin;
-    }
-
-    // Add QA buffer (20%)
-    const estimatedDays = Math.ceil(baseEstimate * 1.2);
-
-    // Determine complexity level
-    let complexity = 'medium';
-    if (complexityScore > 20 || keywordMatches > 5) {
-        complexity = 'high';
-    } else if (complexityScore < 8 && keywordMatches < 2) {
-        complexity = 'low';
-    }
-
-    const feasible = daysAvailable >= estimatedDays;
-    const buffer = daysAvailable - estimatedDays;
-
-    let message = '';
-    let recommendations = [];
-    let allowSubmit = true;
-
-    if (feasible) {
-        if (buffer > 21) {
-            message = `🎉 Excellent Planning! Your project has a very comfortable timeline. Our AI analyzed ${keywordMatches} complexity indicators and estimates ${estimatedDays} days for quality delivery. With ${daysAvailable} days provided, you have a generous ${buffer}-day buffer for refinements and iterations.`;
-            recommendations = [
-                'Timeline is exceptionally well-planned',
-                'Ample time for thorough testing and quality assurance',
-                'Buffer allows for scope adjustments if needed',
-                'Multiple review cycles possible',
-                'Time for detailed documentation'
-            ];
-        } else if (buffer > 14) {
-            message = `✅ Great Timeline! Based on ${complexityScore} complexity points identified, your deadline provides a solid buffer. Estimated completion: ${estimatedDays} days. Available: ${daysAvailable} days. This allows for proper development and testing.`;
-            recommendations = [
-                'Timeline is well-balanced and achievable',
-                'Sufficient buffer for quality delivery',
-                'Clear requirements will optimize the timeline',
-                'Regular feedback loops recommended',
-                'Time available for minor scope adjustments'
-            ];
-        } else if (buffer > 7) {
-            message = `✅ Good Timeline. Your project is feasible with moderate buffer time. AI detected ${keywordMatches} key complexity factors. Estimated: ${estimatedDays} days, Available: ${daysAvailable} days.`;
-            recommendations = [
-                'Timeline is achievable with focused execution',
-                'Provide clear and detailed requirements upfront',
-                'Be available for quick feedback and approvals',
-                'Prioritize features clearly',
-                'Minimize scope changes during development'
-            ];
-        } else {
-            message = `⚠️ Tight but Feasible. Your deadline is achievable but requires efficient execution. Complexity analysis shows ${complexity} complexity level. Estimated: ${estimatedDays} days, Available: ${daysAvailable} days. Only ${buffer} days buffer.`;
-            recommendations = [
-                'Provide extremely clear and detailed requirements',
-                'Be highly available for immediate feedback',
-                'Avoid any scope changes during development',
-                'Quick decision-making will be critical',
-                'Daily or frequent check-ins recommended'
-            ];
-        }
-    } else {
-        const shortage = Math.abs(buffer);
-        message = `❌ Timeline Challenge Detected! Our advanced AI analysis identified ${complexityScore} complexity points and ${keywordMatches} critical features. Estimated delivery time: ${estimatedDays} days. Your deadline: ${daysAvailable} days. Shortage: ${shortage} days.`;
-        
-        const extensionNeeded = shortage + Math.ceil(estimatedDays * 0.15); // Add 15% more
-        
-        recommendations = [
-            `Extend deadline by ${extensionNeeded} days for quality delivery`,
-            `Reduce scope to fit ${daysAvailable}-day timeline`,
-            'Consider phased delivery with priority features first',
-            'Break project into multiple milestones',
-            'Discuss MVP (Minimum Viable Product) approach',
-            'Remove lower-priority features',
-            'Simplify complex features if possible'
-        ];
-        
-        allowSubmit = shortage < 5; // More strict
-        
-        if (!allowSubmit) {
-            message += ` ⛔ We strongly recommend adjusting requirements or timeline before submission to ensure quality delivery.`;
-        } else {
-            message += ` ⚠️ You may proceed, but expect a very aggressive schedule with potential quality compromises.`;
-        }
-    }
-
-    res.json({
-        feasible,
-        estimatedDays,
-        daysAvailable,
-        buffer,
-        complexity,
-        complexityScore,
-        keywordMatches,
-        message,
-        recommendations,
-        allowSubmit,
-        analysis: {
-            fileSize: fileSizeMB.toFixed(2) + ' MB',
+    try {
+        const aiResult = await analyzeProjectRequest({
+            deadline,
             category,
-            deadline: deadlineDate.toLocaleDateString(),
-            intelligenceLevel: 'Advanced AI v2.0'
-        }
-    });
+            title,
+            description,
+            file: req.file
+        });
+        res.json(aiResult);
+    } catch (analysisError) {
+        res.status(502);
+        throw new Error(`AI analysis failed: ${analysisError.message}`);
+    }
 }));
 
 router.post('/tasks', protect, roleRequired('client'), upload.array('attachments', 8), asyncHandler(async (req, res) => {

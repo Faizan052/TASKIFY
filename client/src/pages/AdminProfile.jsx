@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch, clearSession } from '../api'
+import { formatRole } from '../utils/helpers'
 import ProfileSettings from '../components/ProfileSettings'
-
-const formatRoleLabel = (value) => (value ? value.charAt(0).toUpperCase() + value.slice(1) : '')
 
 export default function AdminProfile(){
 	const nav = useNavigate()
@@ -30,7 +29,7 @@ export default function AdminProfile(){
 		nav('/admin/login')
 	}
 
-	const roleLabel = formatRoleLabel('admin')
+	const roleLabel = formatRole('admin')
 	const displayName = profile && profile.username ? profile.username : 'Admin'
 
 	return (

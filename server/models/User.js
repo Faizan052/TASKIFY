@@ -17,6 +17,8 @@ const userSchema = new mongoose.Schema({
     email: {
         type: String,
         required: true,
+        trim: true,
+        lowercase: true,
         unique: true
     },
     password: {
@@ -29,6 +31,26 @@ const userSchema = new mongoose.Schema({
         enum: ['hr', 'manager', 'developer', 'designer', 'tester', 'client'],
         required: true,
         default: 'client'
+    },
+    categories: {
+        type: [String],
+        enum: ['website', 'mobile-app', 'desktop-app', 'testing', 'updation', 'design', 'api', 'database', 'other'],
+        default: [],
+        validate: {
+            validator: function validateCategories(value) {
+                if (!Array.isArray(value)) return false;
+                return value.length === new Set(value).size;
+            },
+            message: 'Duplicate categories are not allowed'
+        },
+        required: function requiredCategories() {
+            return ['manager', 'developer', 'designer', 'tester'].includes(this.role);
+        }
+    },
+    category: {
+        type: String,
+        enum: ['website', 'mobile-app', 'desktop-app', 'testing', 'updation', 'design', 'api', 'database', 'other'],
+        default: ''
     },
     profilePhoto: {
         type: String,
@@ -47,6 +69,22 @@ userSchema.methods.matchPassword = async function(enteredPassword) {
 };
 
 userSchema.pre('save', async function(next) {
+    if (typeof this.email === 'string') {
+        this.email = this.email.trim().toLowerCase();
+    }
+
+    if (Array.isArray(this.categories)) {
+        this.categories = Array.from(new Set(this.categories.filter(Boolean)));
+    }
+
+    if ((!Array.isArray(this.categories) || this.categories.length === 0) && this.category) {
+        this.categories = [this.category];
+    }
+
+    if ((!this.category || this.category === '') && Array.isArray(this.categories) && this.categories.length > 0) {
+        this.category = this.categories[0];
+    }
+
     if (!this.isModified('password')) {
         return next();
     }
@@ -54,5 +92,12 @@ userSchema.pre('save', async function(next) {
     this.password = await bcrypt.hash(this.password, salt);
     return next();
 });
+
+// Indexes for improved query performance
+userSchema.index({ email: 1 });
+userSchema.index({ role: 1 });
+userSchema.index({ role: 1, category: 1 });
+userSchema.index({ role: 1, categories: 1 });
+userSchema.index({ isActive: 1, role: 1 });
 
 module.exports = mongoose.model('User', userSchema);

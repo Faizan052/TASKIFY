@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Input from '../components/Input';
@@ -12,7 +12,7 @@ export default function PasswordResetRequests({ userRole }) {
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
 
-    const fetchRequests = async () => {
+    const fetchRequests = useCallback(async () => {
         setLoading(true);
         setError('');
         
@@ -39,7 +39,7 @@ export default function PasswordResetRequests({ userRole }) {
         } finally {
             setLoading(false);
         }
-    };
+    }, [userRole]);
 
     useEffect(() => {
         fetchRequests();
@@ -47,7 +47,7 @@ export default function PasswordResetRequests({ userRole }) {
         // Auto-refresh every 30 seconds
         const interval = setInterval(fetchRequests, 30000);
         return () => clearInterval(interval);
-    }, [userRole]);
+    }, [fetchRequests]);
 
     const handleResetPassword = async (requestId) => {
         if (!newPassword || newPassword.length < 8) {

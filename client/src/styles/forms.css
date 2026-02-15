@@ -1,0 +1,531 @@
+/* ============================================
+   FORMS & INPUTS
+   ============================================ */
+
+.form label {
+  display: block;
+  margin-bottom: 12px;
+  font-weight: 600;
+  font-size: 15px;
+  color: rgba(17, 24, 39, 0.9);
+}
+
+:root[data-theme="dark"] .form label {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.form input,
+.form select,
+.form textarea {
+  width: 100%;
+  max-width: 600px;
+  padding: 14px 18px;
+  margin-top: 8px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  position: relative;
+  z-index: 2;
+  outline: none;
+  font-size: 15px;
+  background: var(--card);
+  color: inherit;
+  transition: var(--transition);
+  box-sizing: border-box;
+  min-height: 46px;
+}
+
+.form input:disabled,
+.form select:disabled,
+.form textarea:disabled,
+.auth-form input:disabled,
+.auth-form select:disabled {
+  background: #f1f5f9;
+  cursor: not-allowed;
+  opacity: 0.9;
+}
+
+:root[data-theme="dark"] .form input:disabled,
+:root[data-theme="dark"] .form select:disabled,
+:root[data-theme="dark"] .form textarea:disabled,
+:root[data-theme="dark"] .auth-form input:disabled,
+:root[data-theme="dark"] .auth-form select:disabled {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.form textarea {
+  max-width: 800px;
+  min-height: 100px;
+  resize: vertical;
+}
+
+.form input:focus,
+.form select:focus,
+.form textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(11, 116, 222, 0.1);
+}
+
+.form-row {
+  margin-top: 16px;
+  max-width: 600px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+  max-width: 1000px;
+}
+
+.form-grid .form-row {
+  max-width: 100%;
+}
+
+.input-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 600px;
+}
+
+.input-wrapper label {
+  font-weight: 600;
+  font-size: 14px;
+  color: rgba(17, 24, 39, 0.9);
+}
+
+:root[data-theme="dark"] .input-wrapper label {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+/* Password input wrapper for eye icon */
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrapper input {
+  padding-right: 44px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  transition: color 0.2s ease;
+  user-select: none;
+}
+
+.password-toggle:hover {
+  color: var(--accent);
+}
+
+.password-toggle:focus {
+  outline: none;
+  color: var(--accent);
+}
+
+/* Validation messages */
+.validation-error {
+  color: #dc2626;
+  font-size: 13px;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+}
+
+.validation-error::before {
+  content: '✕';
+  font-size: 14px;
+}
+
+.validation-success {
+  color: #16a34a;
+  font-size: 13px;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+}
+
+.validation-success::before {
+  content: '✓';
+  font-size: 14px;
+}
+
+/* Input with validation states */
+.form input.invalid,
+.form select.invalid,
+.form textarea.invalid {
+  border-color: #ef4444;
+  background: #fef2f2;
+}
+
+.form input.valid,
+.form select.valid,
+.form textarea.valid {
+  border-color: #22c55e;
+}
+
+.form input.invalid:focus,
+.form select.invalid:focus,
+.form textarea.invalid:focus {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+.form input.valid:focus,
+.form select.valid:focus,
+.form textarea.valid:focus {
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1);
+}
+
+.small-row {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  max-width: 800px;
+}
+
+.small-row input,
+.small-row select {
+  min-width: 200px;
+  max-width: 400px;
+}
+
+/* Form improvements */
+.form {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 32px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  max-width: 900px;
+}
+
+.form label {
+  max-width: 600px;
+}
+
+.form input:not([type="checkbox"]):not([type="radio"]),
+.form select,
+.form textarea {
+  background: #ffffff;
+  transition: all 0.2s ease;
+}
+
+.form input:hover,
+.form select:hover,
+.form textarea:hover {
+  border-color: #94a3b8;
+}
+
+/* Form group */
+.form-group {
+  margin-bottom: 24px;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  color: #374151;
+}
+
+:root[data-theme="dark"] .form-label {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.form-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: inherit;
+  font-size: 14px;
+  transition: var(--transition);
+  outline: none;
+}
+
+.form-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(11, 116, 222, 0.1);
+}
+
+.form-input.error {
+  border-color: #ef4444;
+  background: #fef2f2;
+}
+
+:root[data-theme="dark"] .form-input.error {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.form-error {
+  color: #dc2626;
+  font-size: 13px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.form-error::before {
+  content: '⚠';
+  font-size: 14px;
+}
+
+/* Glass form */
+.form-glass {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 16px;
+  padding: 32px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="dark"] .form-glass {
+  background: rgba(15, 26, 43, 0.95);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.form-input-glass {
+  width: 100%;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border: 2px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  font-size: 14px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  color: #111;
+}
+
+:root[data-theme="dark"] .form-input-glass {
+  background: rgba(15, 26, 43, 0.95);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.form-input-glass:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(11, 116, 222, 0.1);
+  transform: translateY(-2px);
+}
+
+.form-textarea-glass {
+  min-height: 120px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+/* Password strength indicator */
+.password-strength {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.password-strength.weak {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.password-strength.medium {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.password-strength.strong {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.password-strength-bar {
+  flex: 1;
+  height: 4px;
+  background: #e2e8f0;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.password-strength-fill {
+  height: 100%;
+  transition: width 0.3s ease, background 0.3s ease;
+}
+
+.password-strength-fill.weak {
+  width: 33%;
+  background: #ef4444;
+}
+
+.password-strength-fill.medium {
+  width: 66%;
+  background: #f59e0b;
+}
+
+.password-strength-fill.strong {
+  width: 100%;
+  background: #22c55e;
+}
+
+/* Input requirements list */
+.input-requirements {
+  margin-top: 6px;
+  padding: 10px;
+  background: #f8fafc;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.input-requirements ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-width: 100%;
+}
+
+.input-requirements li {
+  font-size: 13px;
+  color: #64748b;
+  padding: 4px 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: none;
+  transform: none;
+}
+
+.input-requirements li:hover {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  transform: none;
+}
+
+.input-requirements li::before {
+  content: '○';
+  color: #cbd5e1;
+  font-weight: bold;
+}
+
+.input-requirements li.met {
+  color: #16a34a;
+}
+
+.input-requirements li.met::before {
+  content: '✓';
+  color: #16a34a;
+}
+
+/* Role Select Styling */
+.role-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 40px;
+}
+
+/* Dark mode overrides for forms */
+:root[data-theme="dark"] .form {
+  background: var(--card);
+  border-color: var(--border);
+}
+
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] select {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder {
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] input:focus,
+:root[data-theme="dark"] textarea:focus,
+:root[data-theme="dark"] select:focus {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2),
+              0 0 20px rgba(102, 126, 234, 0.1);
+}
+
+:root[data-theme="dark"] input:hover,
+:root[data-theme="dark"] select:hover,
+:root[data-theme="dark"] textarea:hover {
+  border-color: #94a3b8;
+}
+
+:root[data-theme="dark"] option {
+  background: var(--card);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+:root[data-theme="dark"] input:invalid:not(:placeholder-shown),
+:root[data-theme="dark"] textarea:invalid:not(:placeholder-shown) {
+  border-color: var(--color-error);
+}
+
+:root[data-theme="dark"] input:valid:not(:placeholder-shown),
+:root[data-theme="dark"] textarea:valid:not(:placeholder-shown) {
+  border-color: var(--color-success);
+}
+
+:root[data-theme="dark"] ::placeholder {
+  color: var(--text-tertiary);
+  opacity: 1;
+}
+
+/* Required field indicator */
+.required::after,
+[required] + label::after {
+  content: ' *';
+  color: var(--color-error);
+}
+
+:root[data-theme="dark"] .required::after,
+:root[data-theme="dark"] [required] + label::after {
+  color: var(--color-error);
+}
+
+/* Mobile responsive */
+@media (max-width: 640px) {
+  .form, .small-row {
+    max-width: 100%;
+  }
+  
+  .form input, .form select, .form textarea {
+    max-width: 100%;
+  }
+}

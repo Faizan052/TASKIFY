@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch, clearSession, resolveAssetUrl } from '../api'
+import { useUnreadMessages } from '../hooks/useUnreadMessages'
+import { formatDate, formatRole, getTaskStage } from '../utils/helpers'
 import ProfileSettings from '../components/ProfileSettings'
 import ChatMessages from '../components/ChatMessages'
 
 const emptyTeamForm = { name: '', designerEmail: '', developerEmail: '', testerEmail: '' }
 const emptyAssignment = { teamId: '', designerDeadline: '', developerDeadline: '', testerDeadline: '' }
 const emptyProfileForm = { name: '', phone: '', department: '', profilePicture: null }
-const formatRoleLabel = (value) => (value ? value.charAt(0).toUpperCase() + value.slice(1) : '')
 const formatMemberLabel = (member) => {
 	if (!member) return '—'
 	const name = member.name || member.email || 'Member'
@@ -63,7 +64,7 @@ export default function ManagerDashboard(){
 	const [tasks, setTasks] = useState([])
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState(null)
-	const [message, setMessage] = useState('')
+	const [_message, setMessage] = useState('')
 	const [teamForm, setTeamForm] = useState(emptyTeamForm)
 	const [memberInputs, setMemberInputs] = useState({})
 	const [creatingTeam, setCreatingTeam] = useState(false)
@@ -73,13 +74,13 @@ export default function ManagerDashboard(){
 	const [showTeamForm, setShowTeamForm] = useState(false)
 	const [reviewInputs, setReviewInputs] = useState({})
 	const [activeView, setActiveView] = useState('overview')
-	const [unreadMessages, setUnreadMessages] = useState(0)
+	const { unreadMessages } = useUnreadMessages(10000)
 	const [showProfileMenu, setShowProfileMenu] = useState(false)
 	const headerRef = useRef(null)
 	const [editingTeamId, setEditingTeamId] = useState(null)
 	const [deletingTeamId, setDeletingTeamId] = useState(null)
 	const [profileForm, setProfileForm] = useState(emptyProfileForm)
-	const [updatingProfile, setUpdatingProfile] = useState(false)
+	const [_updatingProfile, setUpdatingProfile] = useState(false)
 
 	const loadDashboard = useCallback(async (withSpinner = false) => {
 		if (withSpinner) setLoading(true)
@@ -112,13 +113,12 @@ export default function ManagerDashboard(){
 	useEffect(() => {
 		const handleClickOutside = (e) => {
 			if (headerRef.current && !headerRef.current.contains(e.target)) {
-				setShowManageDropdown(false)
-				setShowViewDropdown(false)
+				setShowProfileMenu(false)
 			}
 		}
 		document.addEventListener('click', handleClickOutside)
 		return () => document.removeEventListener('click', handleClickOutside)
-	}, [])
+	}, [setShowProfileMenu])
 
 	const handleEditTeam = (team) => {
 		setEditingTeamId(team._id)
@@ -145,7 +145,7 @@ export default function ManagerDashboard(){
 		}
 	}
 
-	const handleProfileUpdate = async (e) => {
+	const _handleProfileUpdate = async (e) => {
 		e.preventDefault()
 		setUpdatingProfile(true)
 		setError(null)
@@ -182,20 +182,12 @@ export default function ManagerDashboard(){
 	}, [profile])
 
 	const getTaskStatusStage = (status) => {
-		const stages = {
-			'Awaiting Manager Assignment': { stage: 'Pending Assignment', progress: 10, color: '#f59e0b' },
-			'Design In Progress': { stage: 'Design Phase', progress: 25, color: '#3b82f6' },
-			'Design Completed - Pending Manager Review': { stage: 'Design Review', progress: 35, color: '#8b5cf6' },
-			'Development In Progress': { stage: 'Development Phase', progress: 50, color: '#10b981' },
-			'Development Completed - Pending Manager Review': { stage: 'Dev Review', progress: 65, color: '#8b5cf6' },
-			'Testing In Progress': { stage: 'Testing Phase', progress: 75, color: '#06b6d4' },
-			'Testing Completed - Pending Manager Final Review': { stage: 'Final Review', progress: 85, color: '#8b5cf6' },
-			'Awaiting HR Review': { stage: 'HR Review', progress: 90, color: '#f59e0b' },
-			'Awaiting Client Review': { stage: 'Client Review', progress: 95, color: '#ec4899' },
-			'Completed': { stage: 'Completed', progress: 100, color: '#22c55e' },
-			'Changes Requested': { stage: 'Revisions Needed', progress: 40, color: '#ef4444' }
+		const stage = getTaskStage(status)
+		return {
+			stage: stage.label,
+			progress: stage.progress,
+			color: stage.color
 		}
-		return stages[status] || { stage: status, progress: 0, color: '#6b7280' }
 	}
 
 	const refreshTeams = async () => {
@@ -239,11 +231,11 @@ export default function ManagerDashboard(){
 		STATUS.DEVELOPMENT_REVIEW,
 		STATUS.TESTING_REVIEW
 	].includes(task.status)), [tasks])
-	const withHrOrClient = useMemo(() => tasks.filter(task => [
+	const _withHrOrClient = useMemo(() => tasks.filter(task => [
 		STATUS.AWAITING_HR_REVIEW,
 		STATUS.AWAITING_CLIENT_REVIEW
 	].includes(task.status)), [tasks])
-	const completedTasks = useMemo(() => tasks.filter(task => task.status === STATUS.COMPLETED), [tasks])
+	const _completedTasks = useMemo(() => tasks.filter(task => task.status === STATUS.COMPLETED), [tasks])
 
 	const handleTeamCreate = async (e) => {
 		e.preventDefault()
@@ -337,7 +329,7 @@ export default function ManagerDashboard(){
 		const roleMap = teamRoleLookup[selection.teamId] || {}
 		const missingRoles = ['designer', 'developer', 'tester'].filter(role => !roleMap[role])
 		if (missingRoles.length) {
-			const labels = missingRoles.map(formatRoleLabel).join(', ')
+			const labels = missingRoles.map(formatRole).join(', ')
 			setError(`Selected team is missing required roles: ${labels}`)
 			return
 		}
@@ -400,8 +392,7 @@ export default function ManagerDashboard(){
 		finally{ setForwardingTaskId('') }
 	}
 
-	const formatDate = (value) => value ? new Date(value).toLocaleDateString() : '—'
-	const displayName = profile ? profile.name || profile.email || 'Manager' : 'Manager'
+	const _displayName = profile ? profile.name || profile.email || 'Manager' : 'Manager'
 
 	return (
 		<>
@@ -468,7 +459,7 @@ export default function ManagerDashboard(){
 							<span>Dashboard</span>
 						</button>
 
-						<div className="admin-nav-dropdown">
+						<div className="admin-nav-dropdown" onMouseEnter={(e) => e.currentTarget.classList.add('open')} onMouseLeave={(e) => e.currentTarget.classList.remove('open')}>
 							<button 
 								className={`admin-nav-btn ${['teams', 'tasks'].includes(activeView) ? 'active' : ''}`}
 						>
@@ -488,7 +479,7 @@ export default function ManagerDashboard(){
 						</div>
 					</div>
 
-					<div className="admin-nav-dropdown">
+					<div className="admin-nav-dropdown" onMouseEnter={(e) => e.currentTarget.classList.add('open')} onMouseLeave={(e) => e.currentTarget.classList.remove('open')}>
 						<button 
 							className={`admin-nav-btn ${['review', 'progress'].includes(activeView) ? 'active' : ''}`}
 						>
@@ -863,7 +854,7 @@ export default function ManagerDashboard(){
 													<div className="help" style={{marginTop:4}}>
 														Designer: {formatMemberLabel(roleMap?.designer)} | Developer: {formatMemberLabel(roleMap?.developer)} | Tester: {formatMemberLabel(roleMap?.tester)}
 													</div>
-													{missingRoles.length ? <div className="error" style={{marginTop:6}}>Team is missing: {missingRoles.map(formatRoleLabel).join(', ')}</div> : null}
+													{missingRoles.length ? <div className="error" style={{marginTop:6}}>Team is missing: {missingRoles.map(formatRole).join(', ')}</div> : null}
 													<div className="small-row" style={{marginTop:6, gap:6, alignItems:'center', flexWrap:'wrap'}}>
 														<label style={{display:'flex', flexDirection:'column', fontSize:12}}>
 															Designer deadline
@@ -1138,7 +1129,7 @@ export default function ManagerDashboard(){
 </div>
 
 			{/* Floating Profile Button - Bottom Right */}
-			<div className="floating-profile-wrapper">
+			<div className="floating-profile-wrapper" onMouseEnter={() => setShowProfileMenu(true)} onMouseLeave={() => setShowProfileMenu(false)}>
 				<button className="floating-profile-btn" onClick={() => setShowProfileMenu(!showProfileMenu)}>
 					{profile?.profilePhoto ? (
 						<img src={resolveAssetUrl(profile.profilePhoto)} alt="Profile" className="profile-avatar" />

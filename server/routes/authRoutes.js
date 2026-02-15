@@ -1,22 +1,25 @@
 const express = require('express');
 const router = express.Router();
 const asyncHandler = require('express-async-handler');
-const bcrypt = require('bcryptjs');
 const Admin = require('../models/Admin');
 const User = require('../models/User');
 const PasswordReset = require('../models/PasswordReset');
-const { generateOTP, sendPasswordResetOTP, sendPasswordChangedEmail, sendNewPasswordEmail } = require('../utils/emailService');
+const { generateOTP, sendPasswordResetOTP, sendPasswordChangedEmail } = require('../utils/emailService');
+const { validateEmail } = require('../utils/validation');
+const { normalizeEmail } = require('../utils/identity');
 
 // Step 1: Request Password Reset (Send OTP or Create Request)
 router.post('/forgot-password', asyncHandler(async (req, res) => {
     const { email } = req.body;
 
-    if (!email) {
+    // Validate email
+    const emailValidation = validateEmail(email);
+    if (!emailValidation.valid) {
         res.status(400);
-        throw new Error('Email is required');
+        throw new Error(emailValidation.error);
     }
 
-    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedEmail = normalizeEmail(emailValidation.email);
 
     // Check if user is admin
     const admin = await Admin.findOne({ email: trimmedEmail });
@@ -84,12 +87,19 @@ router.post('/forgot-password', asyncHandler(async (req, res) => {
 router.post('/verify-reset-otp', asyncHandler(async (req, res) => {
     const { email, otp } = req.body;
 
-    if (!email || !otp) {
+    if (!otp) {
         res.status(400);
-        throw new Error('Email and OTP are required');
+        throw new Error('OTP is required');
     }
 
-    const trimmedEmail = email.trim().toLowerCase();
+    // Validate email
+    const emailValidation = validateEmail(email);
+    if (!emailValidation.valid) {
+        res.status(400);
+        throw new Error(emailValidation.error);
+    }
+
+    const trimmedEmail = normalizeEmail(emailValidation.email);
 
     // Find password reset request
     const resetRequest = await PasswordReset.findOne({
@@ -119,9 +129,9 @@ router.post('/verify-reset-otp', asyncHandler(async (req, res) => {
 router.post('/reset-password', asyncHandler(async (req, res) => {
     const { email, newPassword } = req.body;
 
-    if (!email || !newPassword) {
+    if (!newPassword) {
         res.status(400);
-        throw new Error('Email and new password are required');
+        throw new Error('New password is required');
     }
 
     if (newPassword.length < 8) {
@@ -129,7 +139,14 @@ router.post('/reset-password', asyncHandler(async (req, res) => {
         throw new Error('Password must be at least 8 characters');
     }
 
-    const trimmedEmail = email.trim().toLowerCase();
+    // Validate email
+    const emailValidation = validateEmail(email);
+    if (!emailValidation.valid) {
+        res.status(400);
+        throw new Error(emailValidation.error);
+    }
+
+    const trimmedEmail = normalizeEmail(emailValidation.email);
 
     // Find verified password reset request
     const resetRequest = await PasswordReset.findOne({

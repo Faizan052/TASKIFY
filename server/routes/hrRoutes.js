@@ -8,7 +8,35 @@ const PasswordReset = require('../models/PasswordReset');
 const { protect } = require('../middleware/auth');
 const { roleRequired } = require('../middleware/roles');
 const { STATUS, STAGE, setTaskState, notifyUsers } = require('../utils/taskWorkflow');
-const { sendNewPasswordEmail, sendWelcomeEmail } = require('../utils/emailService');
+const { trySendWelcomeEmail, trySendNewPasswordEmail } = require('../utils/emailNotifications');
+const { normalizeEmail, assertUniqueIdentity } = require('../utils/identity');
+
+const CATEGORY_OPTIONS = ['website', 'mobile-app', 'desktop-app', 'testing', 'updation', 'design', 'api', 'database', 'other'];
+
+const normalizeCategories = (value) => {
+    if (Array.isArray(value)) {
+        return value.map(item => (item || '').toString().trim()).filter(Boolean);
+    }
+    if (typeof value === 'string' && value.trim()) {
+        return [value.trim()];
+    }
+    return [];
+};
+
+const getUserCategories = (user) => {
+    if (Array.isArray(user?.categories) && user.categories.length > 0) {
+        return user.categories;
+    }
+    if (user?.category) {
+        return [user.category];
+    }
+    return [];
+};
+
+const hasTaskCategoryAccess = (user, taskCategory) => {
+    if (!taskCategory) return true;
+    return getUserCategories(user).includes(taskCategory);
+};
 
 const normalizeId = (value) => {
     if (value === undefined || value === null || value === '') {
@@ -24,23 +52,39 @@ const collectManagerIds = async () => {
 
 // HR creates manager
 router.post('/managers', protect, roleRequired('hr'), asyncHandler(async (req, res) => {
-    const { name, email, password } = req.body;
+    const { name, password } = req.body;
+    const email = normalizeEmail(req.body.email);
+    const categories = normalizeCategories(req.body.categories ?? req.body.category);
 
-    const exists = await User.findOne({ email });
-    if (exists) {
+    if (!categories.length) {
         res.status(400);
-        throw new Error('User already exists');
+        throw new Error('At least one valid category is required for manager');
     }
 
-    const user = await User.create({ name, email, password, role: 'manager' });
-    if (user) {
-        try {
-            await sendWelcomeEmail(user.email, user.name, 'manager', password);
-        } catch (emailError) {
-            console.log('Welcome email failed but manager created:', emailError);
-        }
+    const invalidCategories = categories.filter(item => !CATEGORY_OPTIONS.includes(item));
+    if (invalidCategories.length > 0) {
+        res.status(400);
+        throw new Error('Invalid categories for manager');
+    }
 
-        res.status(201).json({ _id: user._id, name: user.name, email: user.email, role: user.role });
+    try {
+        await assertUniqueIdentity({ email });
+    } catch (identityError) {
+        res.status(400);
+        throw new Error(identityError.message);
+    }
+
+    const user = await User.create({ name, email, password, role: 'manager', categories, category: categories[0] });
+    if (user) {
+        await trySendWelcomeEmail({
+            email: user.email,
+            name: user.name,
+            role: 'manager',
+            password,
+            errorMessage: 'Welcome email failed but manager created:'
+        });
+
+        res.status(201).json({ _id: user._id, name: user.name, email: user.email, role: user.role, categories: user.categories || [], category: user.category });
     } else {
         res.status(400);
         throw new Error('Invalid manager data');
@@ -62,21 +106,46 @@ router.put('/managers/:id', protect, roleRequired('hr'), asyncHandler(async (req
     }
 
     manager.name = req.body.name || manager.name;
-    manager.email = req.body.email || manager.email;
+    const nextEmail = req.body.email !== undefined ? normalizeEmail(req.body.email) : manager.email;
+    if (nextEmail !== manager.email) {
+        try {
+            await assertUniqueIdentity({ email: nextEmail, excludeUserId: manager._id });
+        } catch (identityError) {
+            res.status(400);
+            throw new Error(identityError.message);
+        }
+    }
+    manager.email = nextEmail;
+    if (req.body.categories !== undefined || req.body.category !== undefined) {
+        const categories = normalizeCategories(req.body.categories ?? req.body.category);
+        if (!categories.length) {
+            res.status(400);
+            throw new Error('At least one category is required for manager');
+        }
+        const invalidCategories = categories.filter(item => !CATEGORY_OPTIONS.includes(item));
+        if (invalidCategories.length > 0) {
+            res.status(400);
+            throw new Error('Invalid categories for manager');
+        }
+        manager.categories = categories;
+        manager.category = categories[0];
+    }
     const passwordProvided = !!(req.body.password);
     if (passwordProvided) manager.password = req.body.password;
 
     const updated = await manager.save();
 
     if (passwordProvided) {
-        try {
-            await sendNewPasswordEmail(updated.email, updated.name, req.body.password, 'manager');
-        } catch (emailError) {
-            console.log('Failed to send updated credentials email to manager:', emailError);
-        }
+        await trySendNewPasswordEmail({
+            email: updated.email,
+            name: updated.name,
+            password: req.body.password,
+            role: 'manager',
+            errorMessage: 'Failed to send updated credentials email to manager:'
+        });
     }
 
-    res.json({ _id: updated._id, name: updated.name, email: updated.email });
+    res.json({ _id: updated._id, name: updated.name, email: updated.email, role: updated.role, categories: updated.categories || [], category: updated.category });
 }));
 
 // HR deletes manager
@@ -96,8 +165,8 @@ router.get('/overview', protect, roleRequired('hr'), asyncHandler(async (req, re
     const managerIds = managers.map(manager => manager._id);
 
     const teams = await Team.find({ manager: { $in: managerIds } })
-        .populate('manager', 'name email')
-        .populate('members', 'name email role')
+        .populate('manager', 'name email role category')
+        .populate('members', 'name email role category')
         .sort({ createdAt: -1 });
 
     const managerTasks = await Task.find({
@@ -106,17 +175,17 @@ router.get('/overview', protect, roleRequired('hr'), asyncHandler(async (req, re
             { manager: { $in: managerIds } }
         ]
     })
-        .populate('assignedTo', 'name email role')
+        .populate('assignedTo', 'name email role category')
         .populate('assignedTeam', 'name')
-        .populate('manager', 'name email')
-        .populate('createdBy', 'username name email role')
+        .populate('manager', 'name email role category')
+        .populate('createdBy', 'username name email role category')
         .sort({ createdAt: -1 });
 
     const pendingClientRequests = await Task.find({
         createdByRole: 'client',
         status: 'Client Requested'
     })
-        .populate('createdBy', 'name email role')
+        .populate('createdBy', 'name email role category')
         .sort({ createdAt: -1 });
 
     res.json({ managers, teams, managerTasks, pendingClientRequests });
@@ -134,10 +203,10 @@ router.get('/tasks', protect, roleRequired('hr'), asyncHandler(async (req, res) 
             { status: { $in: ['Awaiting HR Review', 'Awaiting Client Review', 'Completed', 'Changes Requested'] } }
         ]
     })
-        .populate('assignedTo', 'name email role')
+        .populate('assignedTo', 'name email role category')
         .populate('assignedTeam', 'name')
-        .populate('manager', 'name email')
-        .populate('createdBy', 'username name email role')
+        .populate('manager', 'name email role category')
+        .populate('createdBy', 'username name email role category')
         .sort({ createdAt: -1 });
 
     res.json(tasks);
@@ -171,6 +240,10 @@ router.put('/tasks/:id/assign', protect, roleRequired('hr'), asyncHandler(async 
             res.status(404);
             throw new Error('Manager not found');
         }
+        if (!hasTaskCategoryAccess(manager, task.category)) {
+            res.status(400);
+            throw new Error(`Manager categories do not include task category (${task.category})`);
+        }
     }
 
     let teamDoc = null;
@@ -187,6 +260,11 @@ router.put('/tasks/:id/assign', protect, roleRequired('hr'), asyncHandler(async 
         if (!manager) {
             manager = await User.findOne({ _id: teamDoc.manager, role: 'manager' });
         }
+    }
+
+    if (manager && !hasTaskCategoryAccess(manager, task.category)) {
+        res.status(400);
+        throw new Error(`Manager categories do not include task category (${task.category})`);
     }
 
     if (!manager) {
@@ -238,10 +316,10 @@ router.put('/tasks/:id/assign', protect, roleRequired('hr'), asyncHandler(async 
     });
 
     const updated = await task.save();
-    await updated.populate('assignedTo', 'name email role');
+    await updated.populate('assignedTo', 'name email role category');
     await updated.populate('assignedTeam', 'name');
-    await updated.populate('manager', 'name email');
-    await updated.populate('createdBy', 'username name email role');
+    await updated.populate('manager', 'name email role category');
+    await updated.populate('createdBy', 'username name email role category');
 
     await notifyUsers({
         recipients: [manager._id],
@@ -276,10 +354,10 @@ router.put('/tasks/:id/send-client', protect, roleRequired('hr'), asyncHandler(a
     });
 
     const updated = await task.save();
-    await updated.populate('assignedTo', 'name email role');
+    await updated.populate('assignedTo', 'name email role category');
     await updated.populate('assignedTeam', 'name');
-    await updated.populate('manager', 'name email');
-    await updated.populate('createdBy', 'username name email role');
+    await updated.populate('manager', 'name email role category');
+    await updated.populate('createdBy', 'username name email role category');
 
     if (assignToClient) {
         await notifyUsers({
@@ -320,10 +398,10 @@ router.put('/tasks/:id/forward-manager', protect, roleRequired('hr'), asyncHandl
     });
 
     const updated = await task.save();
-    await updated.populate('assignedTo', 'name email role');
+    await updated.populate('assignedTo', 'name email role category');
     await updated.populate('assignedTeam', 'name');
-    await updated.populate('manager', 'name email');
-    await updated.populate('createdBy', 'username name email role');
+    await updated.populate('manager', 'name email role category');
+    await updated.populate('createdBy', 'username name email role category');
 
     await notifyUsers({
         recipients: [task.manager],
@@ -387,7 +465,13 @@ router.post('/reset-manager-password', protect, roleRequired('hr'), asyncHandler
     await managerUser.save();
 
     // Send email to Manager with new password
-    await sendNewPasswordEmail(managerUser.email, managerUser.name, newPassword, 'manager');
+    await trySendNewPasswordEmail({
+        email: managerUser.email,
+        name: managerUser.name,
+        password: newPassword,
+        role: 'manager',
+        errorMessage: 'Failed to send new password email to manager:'
+    });
 
     // Update reset request status
     resetRequest.status = 'completed';

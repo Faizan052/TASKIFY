@@ -5,6 +5,8 @@ const adminSchema = new mongoose.Schema({
     username: {
         type: String,
         required: true,
+        trim: true,
+        lowercase: true,
         unique: true
     },
     phone: {
@@ -17,6 +19,7 @@ const adminSchema = new mongoose.Schema({
     },
     email: {
         type: String,
+        lowercase: true,
         trim: true,
         default: ''
     },
@@ -37,6 +40,13 @@ adminSchema.methods.matchPassword = async function(enteredPassword) {
 };
 
 adminSchema.pre('save', async function(next) {
+    if (typeof this.username === 'string') {
+        this.username = this.username.trim().toLowerCase();
+    }
+    if (typeof this.email === 'string') {
+        this.email = this.email.trim().toLowerCase();
+    }
+
     if (!this.isModified('password')) {
         return next();
     }
