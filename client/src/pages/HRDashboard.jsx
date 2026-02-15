@@ -5,6 +5,7 @@ import { useUnreadMessages } from '../hooks/useUnreadMessages'
 import { formatDate, getTaskStage, formatCategory, formatCategories, CATEGORY_OPTIONS } from '../utils/helpers'
 import ProfileSettings from '../components/ProfileSettings'
 import ChatMessages from '../components/ChatMessages'
+import DashboardWelcomeBanner from '../components/DashboardWelcomeBanner'
 
 const emptyManagerForm = { name: '', email: '', password: '', categories: [] }
 const emptyProfileForm = { name: '', phone: '', department: '', profilePicture: null }
@@ -399,6 +400,7 @@ export default function HRDashboard(){
 								{/* OVERVIEW */}
 								{activeView === 'overview' && (
 									<>
+										<DashboardWelcomeBanner name={profile?.name} role="hr" />
 										{/* Stats Cards Grid */}
 										<div style={{
 											display: 'grid',
@@ -661,10 +663,10 @@ export default function HRDashboard(){
 																	Edit
 																</button>
 																<button 
-																	className="btn small" 
+																	className="btn small danger-action" 
 																	onClick={() => handleDeleteManager(manager._id)}
 																	disabled={deletingManagerId === manager._id}
-																	style={{background: '#ef4444', minWidth: 80}}
+																	style={{minWidth: 80}}
 																>
 																	{deletingManagerId === manager._id ? 'Deleting...' : 'Delete'}
 																</button>

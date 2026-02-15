@@ -1203,6 +1203,319 @@
   color: white;
 }
 
+.btn.danger-action,
+.btn.btn-outline.danger-action {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.btn.danger-action:hover,
+.btn.btn-outline.danger-action:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(220, 38, 38, 0.28);
+}
+
+/* ============================================
+   WELCOME WIDGET - Compact Dashboard Card
+   ============================================ */
+
+.welcome-widget {
+  position: relative;
+  margin: 0 0 32px 0;
+  padding: 20px 24px;
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e8eef5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  animation: widgetSlideIn 0.5s ease-out;
+}
+
+:root[data-theme="dark"] .welcome-widget {
+  background: var(--card);
+  border-color: var(--border);
+}
+
+.welcome-widget:hover {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.1);
+  border-color: rgba(102, 126, 234, 0.3);
+  transform: translateY(-2px);
+}
+
+/* Subtle Gradient Accent */
+.welcome-widget-gradient {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 50%, transparent 100%);
+  z-index: 0;
+}
+
+/* Left Section */
+.welcome-widget-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+  z-index: 1;
+}
+
+.welcome-icon-holder {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.08));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(102, 126, 234, 0.15);
+}
+
+.welcome-emoji {
+  font-size: 22px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
+
+.welcome-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.welcome-top-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.welcome-greeting-text {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: #1e293b;
+  line-height: 1.3;
+}
+
+:root[data-theme="dark"] .welcome-greeting-text {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.welcome-greeting-text strong {
+  font-weight: 700;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.welcome-role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.08));
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #667eea;
+}
+
+.pulse-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #667eea;
+  animation: pulseSmooth 2s ease-in-out infinite;
+}
+
+.welcome-insight {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #64748b;
+  font-weight: 500;
+  animation: textFadeIn 0.5s ease-out;
+}
+
+:root[data-theme="dark"] .welcome-insight {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+/* Right Section - Elegant Time Display */
+.welcome-widget-right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.welcome-time-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.06), rgba(118, 75, 162, 0.04));
+  border: 1px solid rgba(102, 126, 234, 0.12);
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #667eea;
+  letter-spacing: 0.3px;
+  transition: all 0.3s ease;
+}
+
+.welcome-time-chip:hover {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.08));
+  border-color: rgba(102, 126, 234, 0.2);
+  transform: translateY(-1px);
+}
+
+.welcome-time-chip svg {
+  opacity: 0.8;
+  transition: opacity 0.3s ease;
+}
+
+.welcome-time-chip:hover svg {
+  opacity: 1;
+}
+
+/* Role-Specific Colors */
+.welcome-widget.role-admin .welcome-icon-holder {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.08));
+  border-color: rgba(102, 126, 234, 0.15);
+}
+
+.welcome-widget.role-manager .welcome-icon-holder {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.1), rgba(59, 130, 246, 0.08));
+  border-color: rgba(6, 182, 212, 0.15);
+}
+
+.welcome-widget.role-manager .welcome-role-chip {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.1), rgba(59, 130, 246, 0.08));
+  border-color: rgba(6, 182, 212, 0.2);
+  color: #06b6d4;
+}
+
+.welcome-widget.role-manager .pulse-indicator {
+  background: #06b6d4;
+}
+
+.welcome-widget.role-manager .welcome-time-chip {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.06), rgba(59, 130, 246, 0.04));
+  border-color: rgba(6, 182, 212, 0.12);
+  color: #06b6d4;
+}
+
+.welcome-widget.role-manager .welcome-time-chip:hover {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.1), rgba(59, 130, 246, 0.08));
+  border-color: rgba(6, 182, 212, 0.2);
+}
+
+.welcome-widget.role-manager .welcome-widget-gradient {
+  background: linear-gradient(90deg, #06b6d4 0%, #3b82f6 50%, transparent 100%);
+}
+
+.welcome-widget.role-hr .welcome-icon-holder {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(249, 115, 22, 0.08));
+  border-color: rgba(245, 158, 11, 0.15);
+}
+
+.welcome-widget.role-hr .welcome-role-chip {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(249, 115, 22, 0.08));
+  border-color: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+
+.welcome-widget.role-hr .pulse-indicator {
+  background: #f59e0b;
+}
+
+.welcome-widget.role-hr .welcome-time-chip {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.06), rgba(249, 115, 22, 0.04));
+  border-color: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+}
+
+.welcome-widget.role-hr .welcome-time-chip:hover {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(249, 115, 22, 0.08));
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.welcome-widget.role-hr .welcome-widget-gradient {
+  background: linear-gradient(90deg, #f59e0b 0%, #f97316 50%, transparent 100%);
+}
+
+/* Animations */
+@keyframes widgetSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulseSmooth {
+  0%, 100% { 
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% { 
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+}
+
+@keyframes textFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .welcome-widget {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+    margin: 0 0 24px 0;
+    padding: 16px 20px;
+  }
+  
+  .welcome-widget-right {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  
+  .welcome-greeting-text {
+    font-size: 16px;
+  }
+  
+  .welcome-insight {
+    font-size: 12px;
+  }
+}
+
 /* Table Styling */
 .admin-table-container {
   background: white;

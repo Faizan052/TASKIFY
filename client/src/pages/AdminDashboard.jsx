@@ -6,6 +6,7 @@ import { formatDate } from '../utils/helpers'
 import ProfileSettings from '../components/ProfileSettings'
 import ChatMessages from '../components/ChatMessages'
 import UserManagement from '../components/UserManagement'
+import DashboardWelcomeBanner from '../components/DashboardWelcomeBanner'
 
 const AUTO_REFRESH_INTERVAL = 30000
 const emptyHrForm = { name: '', email: '', password: '' }
@@ -135,7 +136,7 @@ export default function AdminDashboard(){
 										<p><strong>Joined:</strong> {formatDate(hr.createdAt)}</p>
 										<div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
 											<button className="btn btn-outline" onClick={() => handleEditHr(hr)}>Edit</button>
-											<button className="btn btn-outline" onClick={() => deleteHr(hr._id)}>Delete</button>
+											<button className="btn btn-outline danger-action" onClick={() => deleteHr(hr._id)}>Delete</button>
 										</div>
 									</div>
 								</div>
@@ -819,6 +820,9 @@ export default function AdminDashboard(){
 				</div>
 				
 				<div className="admin-content">
+					{activeView === 'overview' && (
+						<DashboardWelcomeBanner name={displayName} role="admin" />
+					)}
 					{profile ? renderContent() : null}
 				</div>
 			</div>

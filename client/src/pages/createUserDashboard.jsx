@@ -7,6 +7,7 @@ import { useUserWorkspace } from '../hooks/useUserWorkspace'
 import ProfileSettings from '../components/ProfileSettings'
 import ChatMessages from '../components/ChatMessages'
 import SubmitRequestForm from '../components/SubmitRequestForm'
+import DashboardWelcomeBanner from '../components/DashboardWelcomeBanner'
 
 const STATUS = {
 	CLIENT_REQUESTED: 'Client Requested',
@@ -754,6 +755,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 						{/* OVERVIEW VIEW */}
 						{activeView === 'overview' ? (
 								<>
+									<DashboardWelcomeBanner name={profile?.name} role={effectiveRole || 'client'} />
 									{/* Stats Cards Grid */}
 									<div style={{
 										display: 'grid',

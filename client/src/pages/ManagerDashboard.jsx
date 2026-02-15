@@ -5,6 +5,7 @@ import { useUnreadMessages } from '../hooks/useUnreadMessages'
 import { formatDate, formatRole, getTaskStage } from '../utils/helpers'
 import ProfileSettings from '../components/ProfileSettings'
 import ChatMessages from '../components/ChatMessages'
+import DashboardWelcomeBanner from '../components/DashboardWelcomeBanner'
 
 const emptyTeamForm = { name: '', designerEmail: '', developerEmail: '', testerEmail: '' }
 const emptyAssignment = { teamId: '', designerDeadline: '', developerDeadline: '', testerDeadline: '' }
@@ -522,9 +523,9 @@ export default function ManagerDashboard(){
 			{/* Main Content Area */}
 			<div className="admin-content">
 				<div className="admin-main">
-					{loading && <div className="loading-message">Loading dashboard...</div>}
-					{error && <div className="error-message">{error}</div>}
-					
+					{activeView === 'overview' && (
+						<DashboardWelcomeBanner name={profile?.name} role="manager" />
+					)}
 					{!loading && profile && (
 						<>
 							{/* OVERVIEW - Stats Only */}
@@ -773,10 +774,10 @@ export default function ManagerDashboard(){
 																	Edit
 																</button>
 																<button 
-																	className="btn small" 
+																	className="btn small danger-action" 
 																	onClick={() => handleDeleteTeam(team._id)}
 																	disabled={deletingTeamId === team._id}
-																	style={{background: '#ef4444', minWidth: 70}}
+																	style={{minWidth: 70}}
 																>
 																	{deletingTeamId === team._id ? 'Deleting...' : 'Delete'}
 																</button>
@@ -797,7 +798,7 @@ export default function ManagerDashboard(){
 																<span className="status-badge status-in-progress" style={{padding:'3px 8px', fontSize:11}}>{member.role}</span>
 															</div>
 														</div>
-														<button className="btn small btn-outline" onClick={()=>handleRemoveMember(team._id, member._id)}>Remove</button>
+														<button className="btn small btn-outline danger-action" onClick={()=>handleRemoveMember(team._id, member._id)}>Remove</button>
 													</div>
 												))}
 											</div>

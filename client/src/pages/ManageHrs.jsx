@@ -146,7 +146,7 @@ export default function ManageHrs(){
 												) : (
 													<React.Fragment>
 														<button className="btn small" type="button" onClick={()=>startEdit(hr)}>Edit</button>
-														<button className="btn btn-outline small" type="button" onClick={()=>removeHr(hr._id)} disabled={deletingId === hr._id}>{deletingId === hr._id ? 'Removing...' : 'Delete'}</button>
+														<button className="btn btn-outline small danger-action" type="button" onClick={()=>removeHr(hr._id)} disabled={deletingId === hr._id}>{deletingId === hr._id ? 'Removing...' : 'Delete'}</button>
 													</React.Fragment>
 												)}
 											</td>
