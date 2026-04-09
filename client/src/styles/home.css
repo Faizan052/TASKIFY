@@ -137,7 +137,7 @@
 
 .btn-primary {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  color: #ffffff;
   padding: 12px 26px;
   font-size: 15px;
   font-weight: 700;
@@ -181,8 +181,8 @@
 }
 
 .btn-primary:hover {
-  transform: translateY(-3px) scale(1.05);
-  box-shadow: 0 10px 40px rgba(102, 126, 234, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 32px rgba(102, 126, 234, 0.36);
 }
 
 .btn-signin {
@@ -192,6 +192,7 @@
   letter-spacing: 0.2px;
   box-shadow: 0 8px 28px rgba(102, 126, 234, 0.36);
   text-transform: none;
+  color: #ffffff;
 }
 
 .btn-signin .signin-content {
@@ -204,6 +205,11 @@
 
 /* Ensure sign-in text remains white on hover (prevents pseudo-element or other rules from dimming it) */
 .btn-primary.btn-signin:hover .signin-content {
+  color: #ffffff;
+}
+
+.btn-signin .signin-content,
+.btn-signin .btn-icon-inline {
   color: #ffffff;
 }
 
@@ -271,8 +277,8 @@
 .btn-secondary:hover {
   color: white;
   border-color: #764ba2;
-  transform: translateY(-3px) scale(1.05);
-  box-shadow: 0 8px 30px rgba(102, 126, 234, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.24);
 }
 
 .btn-icon {
@@ -448,6 +454,7 @@
   transform: translateY(-3px);
   box-shadow: 0 10px 30px rgba(102,126,234,0.16);
   background: linear-gradient(135deg, #7684f5 0%, #8760d1 100%);
+  color: #ffffff;
 }
 
 .btn-primary.btn-signin:hover .btn-icon {
@@ -456,4 +463,32 @@
 
 .btn-primary.btn-signin:active {
   transform: translateY(-1px);
+}
+
+.admin-register-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.75rem;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
+  border: 1.5px solid rgba(102, 126, 234, 0.3);
+  border-radius: 12px;
+  color: #2563eb;
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: all 0.25s ease;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.admin-register-link:hover,
+.admin-register-link:focus-visible {
+  color: #ffffff;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+  border-color: transparent;
+  outline: none;
 }

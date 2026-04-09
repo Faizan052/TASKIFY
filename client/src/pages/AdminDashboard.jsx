@@ -7,9 +7,11 @@ import ProfileSettings from '../components/ProfileSettings'
 import ChatMessages from '../components/ChatMessages'
 import UserManagement from '../components/UserManagement'
 import DashboardWelcomeBanner from '../components/DashboardWelcomeBanner'
+import UserProgressDashboard from '../components/UserProgressDashboard'
 
 const AUTO_REFRESH_INTERVAL = 30000
 const emptyHrForm = { name: '', email: '', password: '' }
+const FLASH_MESSAGE_MS = 1500
 
 export default function AdminDashboard(){
 	const nav = useNavigate()
@@ -27,6 +29,10 @@ export default function AdminDashboard(){
 	const [submittingHr, setSubmittingHr] = useState(false)
 	const [editingHrId, setEditingHrId] = useState(null)
 	const { unreadMessages, setUnreadMessages } = useUnreadMessages(10000)
+	const [performanceReport, setPerformanceReport] = useState(null)
+	const [progressFilter, setProgressFilter] = useState({ teamId: '', userId: '' })
+	const [progressDetail, setProgressDetail] = useState(null)
+	const [loadingProgressDetail, setLoadingProgressDetail] = useState(false)
 
 	const adminDetails = useMemo(() => profile && profile.admin ? profile.admin : null, [profile])
 	const displayName = adminDetails && adminDetails.username ? adminDetails.username : 'Admin'
@@ -35,23 +41,37 @@ export default function AdminDashboard(){
 		if (withSpinner) setLoading(true)
 		setError(null)
 		try{
-			const [profileData, taskData, teamData, userData, hrData] = await Promise.all([
+			const [profileData, taskData, teamData, userData, hrData, reportData] = await Promise.all([
 				apiFetch('/api/admin/profile'),
 				apiFetch('/api/admin/tasks'),
 				apiFetch('/api/admin/teams'),
 				apiFetch('/api/admin/users'),
-				apiFetch('/api/admin/hr').catch(() => [])
+				apiFetch('/api/admin/hr').catch(() => []),
+				apiFetch('/api/admin/performance-report')
 			])
 			setProfile(profileData)
 			setTasks(taskData)
 			setTeams(teamData)
 			setClients(userData.filter(user => user.role === 'client'))
 			setHrs(hrData)
+			setPerformanceReport(reportData)
 		}catch(err){ setError(err.message) }
 		finally{ if (withSpinner) setLoading(false) }
 	},[])
 
 	useEffect(()=>{ loadDashboard(true) },[loadDashboard])
+
+	useEffect(() => {
+		if (!message) return
+		const timer = setTimeout(() => setMessage(''), FLASH_MESSAGE_MS)
+		return () => clearTimeout(timer)
+	}, [message])
+
+	useEffect(() => {
+		if (!error) return
+		const timer = setTimeout(() => setError(null), FLASH_MESSAGE_MS)
+		return () => clearTimeout(timer)
+	}, [error])
 
 	useEffect(()=>{
 		const id = setInterval(()=>{ loadDashboard() }, AUTO_REFRESH_INTERVAL)
@@ -80,7 +100,6 @@ export default function AdminDashboard(){
 			setShowHrForm(false)
 			setEditingHrId(null)
 			await loadDashboard()
-			setTimeout(() => setMessage(''), 3000)
 		} catch (err) {
 			setError(err.message)
 		} finally {
@@ -100,9 +119,61 @@ export default function AdminDashboard(){
 			await apiFetch(`/api/admin/hr/${hrId}`, { method: 'DELETE' })
 			setMessage('HR deleted successfully')
 			loadDashboard()
-			setTimeout(() => setMessage(''), 3000)
 		} catch (err) {
 			setError(err.message)
+		}
+	}
+
+	const refreshPerformanceReport = async (nextFilter = progressFilter) => {
+		try {
+			const params = new URLSearchParams()
+			if (nextFilter.teamId) params.set('teamId', nextFilter.teamId)
+			if (nextFilter.userId) params.set('userId', nextFilter.userId)
+			const query = params.toString()
+			const data = await apiFetch(`/api/admin/performance-report${query ? `?${query}` : ''}`)
+			setPerformanceReport(data)
+		} catch (err) {
+			setError(err.message)
+		}
+	}
+
+	const handleProgressFilterChange = async ({ teamId, userId }) => {
+		const nextFilter = { teamId: teamId || '', userId: userId || '' }
+		setProgressFilter(nextFilter)
+		await refreshPerformanceReport(nextFilter)
+	}
+
+	const viewUserProgress = async (userId) => {
+		setLoadingProgressDetail(true)
+		setActiveView('user-progress')
+		try {
+			const data = await apiFetch(`/api/admin/performance-report/user/${userId}`)
+			setProgressDetail({
+				type: 'user',
+				title: data?.user?.name || data?.user?.email || 'User',
+				metrics: data?.report || {}
+			})
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setLoadingProgressDetail(false)
+		}
+	}
+
+	const viewTeamProgress = async (teamId) => {
+		setLoadingProgressDetail(true)
+		setActiveView('user-progress')
+		try {
+			const data = await apiFetch(`/api/admin/performance-report/team/${teamId}`)
+			setProgressDetail({
+				type: 'team',
+				title: data?.team?.name || 'Team',
+				metrics: data?.report?.summary || {}
+			})
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setLoadingProgressDetail(false)
 		}
 	}
 
@@ -135,6 +206,7 @@ export default function AdminDashboard(){
 										<p><strong>Email:</strong> {hr.email}</p>
 										<p><strong>Joined:</strong> {formatDate(hr.createdAt)}</p>
 										<div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
+											<button className="btn btn-outline" onClick={() => viewUserProgress(hr._id)}>View Progress</button>
 											<button className="btn btn-outline" onClick={() => handleEditHr(hr)}>Edit</button>
 											<button className="btn btn-outline danger-action" onClick={() => deleteHr(hr._id)}>Delete</button>
 										</div>
@@ -161,6 +233,9 @@ export default function AdminDashboard(){
 									<div className="admin-card-body">
 										<p><strong>Email:</strong> {manager.email}</p>
 										<p><strong>Role:</strong> Manager</p>
+										<div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+											<button className="btn small btn-outline" onClick={() => viewUserProgress(manager._id)}>View Progress</button>
+										</div>
 										<div className="progress-info">
 											<div className="progress-label">Success Rate</div>
 											<div className="progress-bar">
@@ -191,6 +266,9 @@ export default function AdminDashboard(){
 									<div className="admin-card-body">
 										<p><strong>Manager:</strong> {team.manager ? team.manager.name : 'Not assigned'}</p>
 										<p><strong>Members:</strong> {team.members && team.members.length ? team.members.map(m => m.name || m.email).join(', ') : 'None'}</p>
+										<div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+											<button className="btn small btn-outline" onClick={() => viewTeamProgress(team._id)}>View Progress</button>
+										</div>
 										<div className="progress-info">
 											<div className="progress-label">Team Progress</div>
 											<div className="progress-bar">
@@ -221,10 +299,29 @@ export default function AdminDashboard(){
 									<div className="admin-card-body">
 										<p><strong>Email:</strong> {client.email}</p>
 										<p><strong>Joined:</strong> {formatDate(client.createdAt)}</p>
+										<div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+											<button className="btn small btn-outline" onClick={() => viewUserProgress(client._id)}>View Progress</button>
+										</div>
 									</div>
 								</div>
 							)) : <p className="empty-state">No clients found</p>}
 						</div>
+					</div>
+				)
+
+			case 'user-progress':
+				return (
+					<div className="admin-view">
+						<UserProgressDashboard
+							report={performanceReport}
+							selectedTeamId={progressFilter.teamId}
+							selectedUserId={progressFilter.userId}
+							onFilterChange={handleProgressFilterChange}
+							onViewUserProgress={viewUserProgress}
+							onViewTeamProgress={viewTeamProgress}
+							detailView={progressDetail}
+							loadingDetail={loadingProgressDetail}
+						/>
 					</div>
 				)
 
@@ -589,6 +686,7 @@ export default function AdminDashboard(){
 	// Dropdown states
 	const [showManageDropdown, setShowManageDropdown] = useState(false)
 	const [showUsersDropdown, setShowUsersDropdown] = useState(false)
+	const [showViewDropdown, setShowViewDropdown] = useState(false)
 	const [showProfileMenu, setShowProfileMenu] = useState(false)
 
 	// Close dropdowns when clicking outside
@@ -597,6 +695,7 @@ export default function AdminDashboard(){
 			if (!e.target.closest('.admin-nav-dropdown') && !e.target.closest('.floating-profile-wrapper')) {
 				setShowManageDropdown(false)
 				setShowUsersDropdown(false)
+				setShowViewDropdown(false)
 				setShowProfileMenu(false)
 			}
 		}
@@ -679,7 +778,7 @@ export default function AdminDashboard(){
 						>
 							<button className="admin-nav-btn">
 								<span className="nav-icon">👥</span>
-								<span>Users</span>
+								<span>Chats</span>
 								<span className="dropdown-arrow">▼</span>
 							</button>
 							{showUsersDropdown && (
@@ -733,6 +832,32 @@ export default function AdminDashboard(){
 									>
 										<span className="dropdown-icon">✓</span>
 										<span>View Tasks</span>
+									</button>
+								</div>
+							)}
+						</div>
+
+						<div 
+							className="admin-nav-dropdown"
+							onMouseEnter={() => setShowViewDropdown(true)}
+							onMouseLeave={() => setShowViewDropdown(false)}
+						>
+							<button className={`admin-nav-btn ${activeView === 'user-progress' ? 'active' : ''}`}>
+								<span className="nav-icon">👁️</span>
+								<span>View</span>
+								<span className="dropdown-arrow">▼</span>
+							</button>
+							{showViewDropdown && (
+								<div className="admin-dropdown-menu">
+									<button 
+										className="dropdown-item"
+										onClick={() => {
+											setActiveView('user-progress')
+											setShowViewDropdown(false)
+										}}
+									>
+										<span className="dropdown-icon">📈</span>
+										<span>User Progress</span>
 									</button>
 								</div>
 							)}

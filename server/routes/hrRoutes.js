@@ -10,6 +10,7 @@ const { roleRequired } = require('../middleware/roles');
 const { STATUS, STAGE, setTaskState, notifyUsers } = require('../utils/taskWorkflow');
 const { trySendWelcomeEmail, trySendNewPasswordEmail } = require('../utils/emailNotifications');
 const { normalizeEmail, assertUniqueIdentity } = require('../utils/identity');
+const { buildPerformanceReport } = require('../utils/performanceReports');
 
 const CATEGORY_OPTIONS = ['website', 'mobile-app', 'desktop-app', 'testing', 'updation', 'design', 'api', 'database', 'other'];
 
@@ -212,6 +213,134 @@ router.get('/tasks', protect, roleRequired('hr'), asyncHandler(async (req, res) 
     res.json(tasks);
 }));
 
+router.get('/performance-report', protect, roleRequired('hr'), asyncHandler(async (req, res) => {
+    const days = Math.max(1, Math.min(parseInt(req.query.days, 10) || 180, 3650));
+    const sinceDate = new Date(Date.now() - (days * 24 * 60 * 60 * 1000));
+    const selectedTeamId = (req.query.teamId || '').toString().trim();
+    const selectedUserId = (req.query.userId || '').toString().trim();
+
+    const [teams, users, tasks] = await Promise.all([
+        Team.find({})
+            .populate('manager', 'name email role')
+            .populate('members', 'name email role')
+            .lean(),
+        User.find({ role: { $in: ['hr', 'manager', 'designer', 'developer', 'tester', 'client'] }, isActive: true })
+            .select('_id name email role')
+            .lean(),
+        Task.find({ createdAt: { $gte: sinceDate } })
+            .select('status deadline updatedAt manager assignedTo assignedTeam stageAssignments history managerDecision')
+            .lean()
+    ]);
+
+    let filteredUsers = users;
+    if (selectedTeamId) {
+        const selectedTeam = teams.find(team => team._id.toString() === selectedTeamId);
+        if (!selectedTeam) {
+            res.status(404);
+            throw new Error('Team not found');
+        }
+        const teamMemberIds = new Set((selectedTeam.members || []).map(member => member._id.toString()));
+        filteredUsers = filteredUsers.filter(user => teamMemberIds.has(user._id.toString()));
+    }
+
+    if (selectedUserId) {
+        filteredUsers = filteredUsers.filter(user => user._id.toString() === selectedUserId);
+    }
+
+    const report = buildPerformanceReport({ users: filteredUsers, tasks });
+
+    const metricByUserId = report.users.reduce((acc, item) => {
+        acc[item.userId.toString()] = item;
+        return acc;
+    }, {});
+
+    const teamsReport = teams.map(team => {
+        const members = (team.members || [])
+            .map(member => metricByUserId[member._id.toString()])
+            .filter(Boolean);
+
+        const summary = members.reduce((acc, item) => {
+            acc.totalAssigned += item.totalAssigned;
+            acc.successfulTasks += item.successfulTasks;
+            acc.failedTasks += item.failedTasks;
+            acc.rejectedTasks += item.rejectedTasks;
+            acc.completedOnTime += item.completedOnTime;
+            acc.delayedTasks += item.delayedTasks;
+            return acc;
+        }, { totalAssigned: 0, successfulTasks: 0, failedTasks: 0, rejectedTasks: 0, completedOnTime: 0, delayedTasks: 0 });
+
+        const denominator = summary.successfulTasks + summary.failedTasks;
+        const successRatio = denominator > 0 ? Number(((summary.successfulTasks / denominator) * 100).toFixed(2)) : 0;
+
+        return {
+            teamId: team._id,
+            teamName: team.name,
+            managerName: team.manager ? (team.manager.name || team.manager.email) : '—',
+            memberCount: (team.members || []).length,
+            successRatio,
+            ...summary
+        };
+    }).filter(team => !selectedTeamId || team.teamId.toString() === selectedTeamId);
+
+    res.json({
+        generatedAt: new Date(),
+        windowDays: days,
+        selectedTeamId: selectedTeamId || null,
+        selectedUserId: selectedUserId || null,
+        ...report,
+        teams: teamsReport,
+        filters: {
+            users: users.map(user => ({ _id: user._id, name: user.name, role: user.role })),
+            teams: teams.map(team => ({ _id: team._id, name: team.name }))
+        }
+    });
+}));
+
+router.get('/performance-report/user/:userId', protect, roleRequired('hr'), asyncHandler(async (req, res) => {
+    const user = await User.findById(req.params.userId).select('_id name email role isActive').lean();
+    if (!user) {
+        res.status(404);
+        throw new Error('User not found');
+    }
+
+    const tasks = await Task.find({})
+        .select('title status deadline updatedAt manager assignedTo assignedTeam stageAssignments history managerDecision createdAt')
+        .lean();
+
+    const report = buildPerformanceReport({ users: [user], tasks });
+    res.json({
+        generatedAt: new Date(),
+        user,
+        report: report.users[0] || null,
+        chart: report.chart
+    });
+}));
+
+router.get('/performance-report/team/:teamId', protect, roleRequired('hr'), asyncHandler(async (req, res) => {
+    const team = await Team.findById(req.params.teamId)
+        .populate('manager', 'name email role')
+        .populate('members', 'name email role isActive')
+        .lean();
+
+    if (!team) {
+        res.status(404);
+        throw new Error('Team not found');
+    }
+
+    const memberIds = (team.members || []).map(member => member._id.toString());
+    const users = await User.find({ _id: { $in: memberIds } }).select('_id name email role isActive').lean();
+    const tasks = await Task.find({})
+        .select('title status deadline updatedAt manager assignedTo assignedTeam stageAssignments history managerDecision createdAt')
+        .lean();
+
+    const report = buildPerformanceReport({ users, tasks });
+    res.json({
+        generatedAt: new Date(),
+        team,
+        report
+    });
+}));
+
 // HR cannot create new tasks (reserved for clients)
 router.post('/tasks', protect, roleRequired('hr'), (req, res) => {
     res.status(403).json({ message: 'Task creation is restricted to clients' });
@@ -308,6 +437,12 @@ router.put('/tasks/:id/assign', protect, roleRequired('hr'), asyncHandler(async 
     task.manager = manager._id;
     task.assignedTo = manager._id;
     task.assignedTeam = teamDoc ? teamDoc._id : null;
+    task.managerDecision = {
+        decision: 'pending',
+        comment: '',
+        reviewedBy: null,
+        reviewedAt: null
+    };
     setTaskState(task, {
         status: STATUS.AWAITING_MANAGER_ASSIGNMENT,
         stage: STAGE.MANAGER_PLANNING,

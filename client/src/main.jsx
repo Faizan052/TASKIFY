@@ -16,11 +16,7 @@ import './styles/admin-dashboard.css' // 8. Specific: admin layouts
 import './styles/user-dashboard.css'  // 9. Specific: user role layouts
 import './styles/profile.css'         // 10. Pages: profile/settings
 import './styles/chat.css'            // 11. Features: messaging
-import './styles/dark-mode.css'       // 12. LAST: dark theme overrides
-
-import { initTheme } from './theme'
-
-initTheme()
+import './styles/manager-progress.css' // 12. Feature: manager progress tracker
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

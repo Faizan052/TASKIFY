@@ -13,7 +13,9 @@
     "dev:all": "concurrently \"npm run server:dev\" \"npm run client\"",
     "dev:ll": "npm run dev:all",
     "lint": "eslint \"server/**/*.js\" \"client/src/**/*.{js,jsx}\"",
-    "lint:fix": "npm run lint -- --fix"
+    "lint:fix": "npm run lint -- --fix",
+    "test": "node --test server/tests/*.test.js",
+    "test:watch": "node --test --watch server/tests/*.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

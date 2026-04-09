@@ -7,6 +7,7 @@ const Task = require('../models/Task');
 const { protect } = require('../middleware/auth');
 const { roleRequired } = require('../middleware/roles');
 const { STATUS, STAGE, setTaskState, notifyUsers } = require('../utils/taskWorkflow');
+const { buildPerformanceReport } = require('../utils/performanceReports');
 
 const normalizeId = (value) => {
     if (value === undefined || value === null || value === '') {
@@ -209,7 +210,75 @@ router.delete('/teams/:teamId/members/:memberId', protect, roleRequired('manager
     res.json(populated);
 }));
 
-// Manager assigns designer, developer, and tester with deadlines
+router.put('/tasks/:id/decision', protect, roleRequired('manager'), asyncHandler(async (req, res) => {
+    const task = await Task.findById(req.params.id);
+    if (!task) {
+        res.status(404);
+        throw new Error('Task not found');
+    }
+
+    if (!task.manager || task.manager.toString() !== req.user._id.toString()) {
+        res.status(403);
+        throw new Error('Only assigned manager can review this task');
+    }
+
+    if (task.status !== STATUS.AWAITING_MANAGER_ASSIGNMENT || task.currentStage !== STAGE.MANAGER_PLANNING) {
+        res.status(400);
+        throw new Error('Task is not awaiting manager decision');
+    }
+
+    const decisionRaw = (req.body.decision || '').toString().trim().toLowerCase();
+    const decisionComment = (req.body.comment || '').toString().trim();
+
+    if (!['accept', 'accepted', 'reject', 'rejected'].includes(decisionRaw)) {
+        res.status(400);
+        throw new Error('Decision must be accept or reject');
+    }
+
+    const isAccept = ['accept', 'accepted'].includes(decisionRaw);
+    if (!isAccept && !decisionComment) {
+        res.status(400);
+        throw new Error('Provide feedback comment when rejecting a task');
+    }
+
+    task.managerDecision = {
+        decision: isAccept ? 'accepted' : 'rejected',
+        comment: decisionComment,
+        reviewedBy: req.user._id,
+        reviewedAt: new Date()
+    };
+
+    if (isAccept) {
+        setTaskState(task, {
+            status: STATUS.AWAITING_MANAGER_ASSIGNMENT,
+            stage: STAGE.MANAGER_PLANNING,
+            note: decisionComment || 'Manager accepted the task for assignment planning',
+            actor: req.user._id
+        });
+    } else {
+        task.assignedTo = null;
+        task.assignedTeam = null;
+        setTaskState(task, {
+            status: STATUS.CHANGES_REQUESTED,
+            stage: STAGE.HR_REVIEW,
+            note: `Manager rejected task: ${decisionComment}`,
+            actor: req.user._id
+        });
+    }
+
+    await task.save();
+    await task.populate('assignedTo', 'name email role category');
+    await task.populate('assignedTeam', 'name');
+    await task.populate('manager', 'name email role category');
+    await task.populate('createdBy', 'username name email role category');
+    await task.populate({ path: 'stageAssignments.designer.user', select: 'name email role category' });
+    await task.populate({ path: 'stageAssignments.developer.user', select: 'name email role category' });
+    await task.populate({ path: 'stageAssignments.tester.user', select: 'name email role category' });
+
+    res.json(task);
+}));
+
+// Manager assigns a task to a full team or directly to a specific user
 router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(async (req, res) => {
     const task = await Task.findById(req.params.id);
     if (!task) {
@@ -229,23 +298,43 @@ router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(a
 
     const {
         teamId,
+        userId,
         designerDeadline,
         developerDeadline,
         testerDeadline
     } = req.body;
 
-    const normalizedTeamId = normalizeId(teamId);
-    if (!normalizedTeamId) {
-        res.status(400);
-        throw new Error('Select a team before assigning the project');
+    if (task.status === STATUS.AWAITING_MANAGER_ASSIGNMENT && task.currentStage === STAGE.MANAGER_PLANNING) {
+        const managerDecision = task.managerDecision?.decision;
+        if (!managerDecision || managerDecision === 'pending' || managerDecision === 'rejected') {
+            res.status(400);
+            throw new Error('Accept this task first before assignment');
+        }
     }
 
-    const team = await Team.findOne({ _id: normalizedTeamId, manager: req.user._id })
-        .populate('members', 'name email role category');
+    const normalizedTeamId = normalizeId(teamId);
+    const normalizedUserId = normalizeId(userId);
+    if (!normalizedTeamId && !normalizedUserId) {
+        res.status(400);
+        throw new Error('Select a team or a specific user before assigning the project');
+    }
 
-    if (!team) {
-        res.status(403);
-        throw new Error('You can only assign projects to your own teams');
+    if (normalizedTeamId && normalizedUserId) {
+        res.status(400);
+        throw new Error('Assign either a team or a single user, not both');
+    }
+
+    const { teams } = await collectManagerTeamData(req.user._id);
+
+    let team = null;
+    if (normalizedTeamId) {
+        team = await Team.findOne({ _id: normalizedTeamId, manager: req.user._id })
+            .populate('members', 'name email role category categories');
+
+        if (!team) {
+            res.status(403);
+            throw new Error('You can only assign projects to your own teams');
+        }
     }
 
     const findMemberByRole = (role) => {
@@ -273,10 +362,6 @@ router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(a
         return dt;
     };
 
-    const designer = findMemberByRole('designer');
-    const developer = findMemberByRole('developer');
-    const tester = findMemberByRole('tester');
-
     const managerCategories = getUserCategories(req.user);
     if (!managerCategories.length) {
         res.status(400);
@@ -285,13 +370,6 @@ router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(a
     if (task.category && !managerCategories.includes(task.category)) {
         res.status(400);
         throw new Error(`Task category (${task.category}) is not included in your manager categories`);
-    }
-
-    const stageMembers = [designer, developer, tester];
-    const mismatchedByCategory = stageMembers.filter(member => !getUserCategories(member).includes(task.category));
-    if (task.category && mismatchedByCategory.length > 0) {
-        res.status(400);
-        throw new Error(`All assigned team members must include task category (${task.category})`);
     }
 
     const ensureStageStructure = () => {
@@ -319,33 +397,141 @@ router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(a
     ensureStageStructure();
 
     task.manager = task.manager || req.user._id;
-    task.assignedTeam = team._id;
 
-    task.stageAssignments.designer.user = designer._id;
-    task.stageAssignments.designer.deadline = parseDeadline(designerDeadline, 'designer', true);
-    task.stageAssignments.designer.status = 'in_progress';
-    task.stageAssignments.designer.submittedAt = null;
-    task.stageAssignments.designer.submissionAttachmentId = null;
+    const resetStage = (stage) => {
+        stage.user = stage.user || null;
+        stage.deadline = null;
+        stage.status = 'pending';
+        stage.submittedAt = null;
+        stage.submissionAttachmentId = null;
+    };
+    resetStage(task.stageAssignments.designer);
+    resetStage(task.stageAssignments.developer);
+    resetStage(task.stageAssignments.tester);
 
-    task.stageAssignments.developer.user = developer._id;
-    task.stageAssignments.developer.deadline = parseDeadline(developerDeadline, 'developer');
-    task.stageAssignments.developer.status = 'pending';
-    task.stageAssignments.developer.submittedAt = null;
-    task.stageAssignments.developer.submissionAttachmentId = null;
+    if (normalizedTeamId) {
+        const designer = findMemberByRole('designer');
+        const developer = findMemberByRole('developer');
+        const tester = findMemberByRole('tester');
 
-    task.stageAssignments.tester.user = tester._id;
-    task.stageAssignments.tester.deadline = parseDeadline(testerDeadline, 'tester');
-    task.stageAssignments.tester.status = 'pending';
-    task.stageAssignments.tester.submittedAt = null;
-    task.stageAssignments.tester.submissionAttachmentId = null;
+        const stageMembers = [designer, developer, tester];
+        const mismatchedByCategory = stageMembers.filter(member => !getUserCategories(member).includes(task.category));
+        if (task.category && mismatchedByCategory.length > 0) {
+            res.status(400);
+            throw new Error(`All assigned team members must include task category (${task.category})`);
+        }
 
-    task.assignedTo = designer._id;
-    setTaskState(task, {
-        status: STATUS.DESIGN_IN_PROGRESS,
-        stage: STAGE.DESIGN,
-        note: `Manager assigned team ${team.name} to the project`,
-        actor: req.user._id
-    });
+        task.assignedTeam = team._id;
+
+        task.stageAssignments.designer.user = designer._id;
+        task.stageAssignments.designer.deadline = parseDeadline(designerDeadline, 'designer', true);
+        task.stageAssignments.designer.status = 'in_progress';
+
+        task.stageAssignments.developer.user = developer._id;
+        task.stageAssignments.developer.deadline = parseDeadline(developerDeadline, 'developer');
+
+        task.stageAssignments.tester.user = tester._id;
+        task.stageAssignments.tester.deadline = parseDeadline(testerDeadline, 'tester');
+
+        task.assignedTo = designer._id;
+        setTaskState(task, {
+            status: STATUS.DESIGN_IN_PROGRESS,
+            stage: STAGE.DESIGN,
+            note: `Manager assigned team ${team.name} to the project`,
+            actor: req.user._id
+        });
+
+        await notifyUsers({
+            recipients: [designer._id],
+            message: `Manager assigned project ${task.title} to your team for design work`,
+            task: task._id,
+            stage: STAGE.DESIGN
+        });
+        await notifyUsers({
+            recipients: [developer._id],
+            message: `Project ${task.title} is queued for development after design approval`,
+            task: task._id,
+            stage: STAGE.DEVELOPMENT
+        });
+        await notifyUsers({
+            recipients: [tester._id],
+            message: `Project ${task.title} will move to you after development approval`,
+            task: task._id,
+            stage: STAGE.TESTING
+        });
+    } else {
+        const directUser = await User.findById(normalizedUserId).select('_id name email role category categories');
+        if (!directUser) {
+            res.status(404);
+            throw new Error('Selected user not found');
+        }
+        if (!['designer', 'developer', 'tester'].includes(directUser.role)) {
+            res.status(400);
+            throw new Error('Direct assignment is allowed only for designer, developer, or tester');
+        }
+
+        const managingTeam = teams.find(item => item.members.some(member => member.toString() === directUser._id.toString()));
+        if (!managingTeam) {
+            res.status(403);
+            throw new Error('You can only assign tasks to users in your teams');
+        }
+        if (task.category && !getUserCategories(directUser).includes(task.category)) {
+            res.status(400);
+            throw new Error(`Selected user categories do not include task category (${task.category})`);
+        }
+
+        task.assignedTeam = managingTeam._id;
+        task.assignedTo = directUser._id;
+
+        if (directUser.role === 'designer') {
+            task.stageAssignments.designer.user = directUser._id;
+            task.stageAssignments.designer.deadline = parseDeadline(designerDeadline, 'designer', true);
+            task.stageAssignments.designer.status = 'in_progress';
+            setTaskState(task, {
+                status: STATUS.DESIGN_IN_PROGRESS,
+                stage: STAGE.DESIGN,
+                note: `Manager assigned task directly to ${directUser.name || directUser.email} (designer)`,
+                actor: req.user._id
+            });
+        } else if (directUser.role === 'developer') {
+            task.stageAssignments.developer.user = directUser._id;
+            task.stageAssignments.developer.deadline = parseDeadline(developerDeadline, 'developer', true);
+            task.stageAssignments.developer.status = 'in_progress';
+            task.stageAssignments.designer.status = 'approved';
+            setTaskState(task, {
+                status: STATUS.DEVELOPMENT_IN_PROGRESS,
+                stage: STAGE.DEVELOPMENT,
+                note: `Manager assigned task directly to ${directUser.name || directUser.email} (developer)`,
+                actor: req.user._id
+            });
+        } else {
+            task.stageAssignments.tester.user = directUser._id;
+            task.stageAssignments.tester.deadline = parseDeadline(testerDeadline, 'tester', true);
+            task.stageAssignments.tester.status = 'in_progress';
+            task.stageAssignments.designer.status = 'approved';
+            task.stageAssignments.developer.status = 'approved';
+            setTaskState(task, {
+                status: STATUS.TESTING_IN_PROGRESS,
+                stage: STAGE.TESTING,
+                note: `Manager assigned task directly to ${directUser.name || directUser.email} (tester)`,
+                actor: req.user._id
+            });
+        }
+
+        await notifyUsers({
+            recipients: [directUser._id],
+            message: `Manager assigned project ${task.title} directly to you`,
+            task: task._id,
+            stage: task.currentStage
+        });
+    }
+
+    task.managerDecision = {
+        decision: 'accepted',
+        comment: task.managerDecision?.comment || '',
+        reviewedBy: task.managerDecision?.reviewedBy || req.user._id,
+        reviewedAt: task.managerDecision?.reviewedAt || new Date()
+    };
 
     task.markModified('stageAssignments');
 
@@ -356,25 +542,6 @@ router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(a
     await updated.populate({ path: 'stageAssignments.designer.user', select: 'name email role category' });
     await updated.populate({ path: 'stageAssignments.developer.user', select: 'name email role category' });
     await updated.populate({ path: 'stageAssignments.tester.user', select: 'name email role category' });
-
-    await notifyUsers({
-        recipients: [designer._id],
-        message: `Manager assigned project ${task.title} to your team for design work`,
-        task: task._id,
-        stage: STAGE.DESIGN
-    });
-    await notifyUsers({
-        recipients: [developer._id],
-        message: `Project ${task.title} is queued for development after design approval`,
-        task: task._id,
-        stage: STAGE.DEVELOPMENT
-    });
-    await notifyUsers({
-        recipients: [tester._id],
-        message: `Project ${task.title} will move to you after development approval`,
-        task: task._id,
-        stage: STAGE.TESTING
-    });
 
     res.json(updated);
 }));
@@ -407,6 +574,65 @@ router.get('/tasks', protect, roleRequired('manager'), asyncHandler(async (req, 
         .sort({ createdAt: -1 });
 
     res.json(dedupeTasks(tasks));
+}));
+
+router.get('/performance-report', protect, roleRequired('manager'), asyncHandler(async (req, res) => {
+    const days = Math.max(1, Math.min(parseInt(req.query.days, 10) || 180, 3650));
+    const sinceDate = new Date(Date.now() - (days * 24 * 60 * 60 * 1000));
+    const { teams, teamIds, memberIds } = await collectManagerTeamData(req.user._id);
+
+    const supervisedUserIds = Array.from(memberIds);
+    const users = await User.find({ _id: { $in: supervisedUserIds }, isActive: true })
+        .select('_id name email role')
+        .lean();
+
+    const tasks = await Task.find({
+        createdAt: { $gte: sinceDate },
+        $or: [
+            { manager: req.user._id },
+            { assignedTeam: { $in: teamIds } },
+            { assignedTo: { $in: supervisedUserIds } }
+        ]
+    })
+        .select('status deadline updatedAt manager assignedTo assignedTeam stageAssignments history')
+        .lean();
+
+    const report = buildPerformanceReport({ users, tasks });
+
+    const userMetricMap = report.users.reduce((acc, item) => {
+        acc[item.userId.toString()] = item;
+        return acc;
+    }, {});
+
+    const teamsReport = teams.map(team => {
+        const members = (team.members || []).map(memberId => userMetricMap[memberId.toString()]).filter(Boolean);
+        const teamSummary = members.reduce((acc, item) => {
+            acc.totalAssigned += item.totalAssigned;
+            acc.successfulTasks += item.successfulTasks;
+            acc.failedTasks += item.failedTasks;
+            acc.completedOnTime += item.completedOnTime;
+            acc.delayedTasks += item.delayedTasks;
+            return acc;
+        }, { totalAssigned: 0, successfulTasks: 0, failedTasks: 0, completedOnTime: 0, delayedTasks: 0 });
+
+        const denominator = teamSummary.successfulTasks + teamSummary.failedTasks;
+        const successRatio = denominator > 0 ? Number(((teamSummary.successfulTasks / denominator) * 100).toFixed(2)) : 0;
+
+        return {
+            teamId: team._id,
+            teamName: team.name,
+            memberCount: team.members.length,
+            successRatio,
+            ...teamSummary
+        };
+    });
+
+    res.json({
+        generatedAt: new Date(),
+        windowDays: days,
+        ...report,
+        teams: teamsReport
+    });
 }));
 
 // Manager updates an existing task for their teams/members
@@ -509,7 +735,7 @@ router.put('/tasks/:id', protect, roleRequired('manager'), asyncHandler(async (r
 
 // Manager fetches users by role (for dynamic team creation)
 router.get('/users', protect, roleRequired('manager'), asyncHandler(async (req, res) => {
-    const { role, category } = req.query;
+    const { role } = req.query;
     
     let query = {};
     if (role) {

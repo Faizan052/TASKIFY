@@ -24,6 +24,23 @@ const normalizeCategories = (value) => {
     if (Array.isArray(value)) {
         return value.map(item => (item || '').toString().trim()).filter(Boolean);
     }
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) return [];
+        if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+            try {
+                const parsed = JSON.parse(trimmed);
+                if (Array.isArray(parsed)) {
+                    return parsed.map(item => (item || '').toString().trim()).filter(Boolean);
+                }
+            } catch (_err) {
+                // fall through to comma-separated handling
+            }
+        }
+        if (trimmed.includes(',')) {
+            return trimmed.split(',').map(item => item.trim()).filter(Boolean);
+        }
+    }
     if (typeof value === 'string' && value.trim()) {
         return [value.trim()];
     }
@@ -659,9 +676,9 @@ router.put('/tasks/:id/status', protect, asyncHandler(async (req, res) => {
 router.post('/analyze-request', protect, roleRequired('client'), upload.single('document'), asyncHandler(async (req, res) => {
     const { deadline, category, title, description } = req.body;
 
-    if (!req.file) {
+    if (!title || !description) {
         res.status(400);
-        throw new Error('Document file is required for feasibility check');
+        throw new Error('Title and description are required for feasibility check');
     }
 
     if (!deadline) {
@@ -680,7 +697,7 @@ router.post('/analyze-request', protect, roleRequired('client'), upload.single('
         category,
         title,
         description,
-        file: req.file
+        file: req.file || null
     });
 
     res.json(result);
@@ -944,6 +961,7 @@ router.put('/profile/basic', protect, upload.single('profilePhoto'), asyncHandle
     }
 
     const { name, phone, department } = req.body;
+    const categories = normalizeCategories(req.body.categories ?? req.body.category);
 
     if (typeof name === 'string') {
         const trimmed = name.trim();
@@ -960,6 +978,22 @@ router.put('/profile/basic', protect, upload.single('profilePhoto'), asyncHandle
         user.department = department.trim();
     }
 
+    if (ROLES_REQUIRING_CATEGORY.includes(user.role)) {
+        if (Object.prototype.hasOwnProperty.call(req.body, 'categories') || Object.prototype.hasOwnProperty.call(req.body, 'category')) {
+            if (!categories.length) {
+                res.status(400);
+                throw new Error('At least one category is required for this role');
+            }
+            const invalidCategories = categories.filter(item => !CATEGORY_OPTIONS.includes(item));
+            if (invalidCategories.length > 0) {
+                res.status(400);
+                throw new Error('Invalid categories provided');
+            }
+            user.categories = Array.from(new Set(categories));
+            user.category = user.categories[0] || '';
+        }
+    }
+
     if (req.file && req.file.filename) {
         user.profilePhoto = `/uploads/${req.file.filename}`;
     }
@@ -972,7 +1006,10 @@ router.put('/profile/basic', protect, upload.single('profilePhoto'), asyncHandle
         role: updated.role,
         profilePhoto: updated.profilePhoto || '',
         phone: updated.phone || '',
-        department: updated.department || ''
+        department: updated.department || '',
+        categories: updated.categories || [],
+        category: updated.category || '',
+        lastSeen: updated.lastSeen || null
     });
 }));
 

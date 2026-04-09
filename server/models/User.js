@@ -50,11 +50,15 @@ const userSchema = new mongoose.Schema({
     category: {
         type: String,
         enum: ['website', 'mobile-app', 'desktop-app', 'testing', 'updation', 'design', 'api', 'database', 'other'],
-        default: ''
+        default: undefined
     },
     profilePhoto: {
         type: String,
         default: ''
+    },
+    lastSeen: {
+        type: Date,
+        default: Date.now
     },
     isActive: {
         type: Boolean,
@@ -67,6 +71,13 @@ const userSchema = new mongoose.Schema({
 userSchema.methods.matchPassword = async function(enteredPassword) {
     return await bcrypt.compare(enteredPassword, this.password);
 };
+
+userSchema.pre('validate', function(next) {
+    if (typeof this.category === 'string' && this.category.trim() === '') {
+        this.category = undefined;
+    }
+    return next();
+});
 
 userSchema.pre('save', async function(next) {
     if (typeof this.email === 'string') {

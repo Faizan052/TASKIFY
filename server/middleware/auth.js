@@ -13,6 +13,12 @@ const protect = async (req, res, next) => {
             // Check if the token belongs to an admin
             const admin = await Admin.findById(decoded.id).select('-password');
             if (admin) {
+                try {
+                    await Admin.updateOne({ _id: admin._id }, { $set: { lastSeen: new Date() } });
+                    admin.lastSeen = new Date();
+                } catch (_err) {
+                    // Ignore non-critical lastSeen update errors
+                }
                 req.user = admin;
                 req.isAdmin = true;
                 return next();
@@ -21,6 +27,16 @@ const protect = async (req, res, next) => {
             // Check if the token belongs to a user
             const user = await User.findById(decoded.id).select('-password');
             if (user) {
+                if (user.isActive === false) {
+                    res.status(403);
+                    return next(new Error('Account is deactivated'));
+                }
+                try {
+                    await User.updateOne({ _id: user._id }, { $set: { lastSeen: new Date() } });
+                    user.lastSeen = new Date();
+                } catch (_err) {
+                    // Ignore non-critical lastSeen update errors
+                }
                 req.user = user;
                 req.isAdmin = false;
                 return next();

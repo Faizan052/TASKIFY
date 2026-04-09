@@ -5,11 +5,38 @@ const Admin = require('../models/Admin');
 const User = require('../models/User');
 const PasswordReset = require('../models/PasswordReset');
 const { generateOTP, sendPasswordResetOTP, sendPasswordChangedEmail } = require('../utils/emailService');
-const { validateEmail } = require('../utils/validation');
+const { validateEmail, validatePassword } = require('../utils/validation');
 const { normalizeEmail } = require('../utils/identity');
+const { createRateLimiter } = require('../middleware/rateLimit');
+
+const GENERIC_FORGOT_PASSWORD_RESPONSE = {
+    message: 'If an account exists for this email, an OTP has been sent.',
+    requiresOTP: true
+};
+
+const forgotPasswordLimiter = createRateLimiter({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    keyGenerator: (req) => `${req.ip || 'ip'}:forgot:${normalizeEmail(req.body?.email || '')}`,
+    message: 'Too many password reset requests. Please try again in a few minutes.'
+});
+
+const verifyOtpLimiter = createRateLimiter({
+    windowMs: 10 * 60 * 1000,
+    max: 12,
+    keyGenerator: (req) => `${req.ip || 'ip'}:verify:${normalizeEmail(req.body?.email || '')}`,
+    message: 'Too many OTP verification attempts. Please wait and try again.'
+});
+
+const resetPasswordLimiter = createRateLimiter({
+    windowMs: 15 * 60 * 1000,
+    max: 6,
+    keyGenerator: (req) => `${req.ip || 'ip'}:reset:${normalizeEmail(req.body?.email || '')}`,
+    message: 'Too many password reset attempts. Please try again later.'
+});
 
 // Step 1: Request Password Reset (Send OTP or Create Request)
-router.post('/forgot-password', asyncHandler(async (req, res) => {
+router.post('/forgot-password', forgotPasswordLimiter, asyncHandler(async (req, res) => {
     const { email } = req.body;
 
     // Validate email
@@ -41,21 +68,13 @@ router.post('/forgot-password', asyncHandler(async (req, res) => {
         // Send OTP email
         await sendPasswordResetOTP(trimmedEmail, otp, admin.username || 'Admin');
 
-        return res.json({
-            message: 'OTP sent to your email',
-            email: trimmedEmail,
-            userType: 'admin',
-            userName: admin.username || 'Admin',
-            role: 'admin',
-            requiresOTP: true
-        });
+        return res.json(GENERIC_FORGOT_PASSWORD_RESPONSE);
     }
 
     // Check if user exists
     const user = await User.findOne({ email: trimmedEmail });
     if (!user) {
-        res.status(404);
-        throw new Error('No account found with this email');
+        return res.json(GENERIC_FORGOT_PASSWORD_RESPONSE);
     }
 
     // All users (including HR and Manager): Send OTP directly
@@ -68,23 +87,18 @@ router.post('/forgot-password', asyncHandler(async (req, res) => {
         userType: 'user',
         role: user.role,
         otp,
-        status: 'otp-sent'
+        status: 'otp-sent',
+        otpAttempts: 0,
+        lockUntil: null
     });
 
     await sendPasswordResetOTP(trimmedEmail, otp, user.name);
 
-    res.json({
-        message: 'OTP sent to your email',
-        email: trimmedEmail,
-        userType: 'user',
-        userName: user.name,
-        role: user.role,
-        requiresOTP: true
-    });
+    res.json(GENERIC_FORGOT_PASSWORD_RESPONSE);
 }));
 
 // Step 2: Verify OTP
-router.post('/verify-reset-otp', asyncHandler(async (req, res) => {
+router.post('/verify-reset-otp', verifyOtpLimiter, asyncHandler(async (req, res) => {
     const { email, otp } = req.body;
 
     if (!otp) {
@@ -101,21 +115,36 @@ router.post('/verify-reset-otp', asyncHandler(async (req, res) => {
 
     const trimmedEmail = normalizeEmail(emailValidation.email);
 
-    // Find password reset request
+    // Find the latest OTP request for this email
     const resetRequest = await PasswordReset.findOne({
         email: trimmedEmail,
-        otp: otp.trim(),
-        status: 'otp-sent',
-        expiresAt: { $gt: new Date() }
-    });
+        status: 'otp-sent'
+    }).sort({ createdAt: -1 });
 
-    if (!resetRequest) {
+    if (!resetRequest || (resetRequest.expiresAt && resetRequest.expiresAt <= new Date())) {
+        res.status(400);
+        throw new Error('Invalid or expired OTP');
+    }
+
+    if (resetRequest.lockUntil && resetRequest.lockUntil > new Date()) {
+        res.status(429);
+        throw new Error('Too many invalid OTP attempts. Please request a new OTP.');
+    }
+
+    if (resetRequest.otp !== otp.trim()) {
+        resetRequest.otpAttempts = (resetRequest.otpAttempts || 0) + 1;
+        if (resetRequest.otpAttempts >= 5) {
+            resetRequest.lockUntil = new Date(Date.now() + 10 * 60 * 1000);
+        }
+        await resetRequest.save();
         res.status(400);
         throw new Error('Invalid or expired OTP');
     }
 
     // Update status to verified
     resetRequest.status = 'otp-verified';
+    resetRequest.otpAttempts = 0;
+    resetRequest.lockUntil = null;
     await resetRequest.save();
 
     res.json({
@@ -126,17 +155,13 @@ router.post('/verify-reset-otp', asyncHandler(async (req, res) => {
 }));
 
 // Step 3: Reset Password
-router.post('/reset-password', asyncHandler(async (req, res) => {
+router.post('/reset-password', resetPasswordLimiter, asyncHandler(async (req, res) => {
     const { email, newPassword } = req.body;
 
-    if (!newPassword) {
+    const passwordValidation = validatePassword(newPassword, { minLength: 8 });
+    if (!passwordValidation.valid) {
         res.status(400);
-        throw new Error('New password is required');
-    }
-
-    if (newPassword.length < 8) {
-        res.status(400);
-        throw new Error('Password must be at least 8 characters');
+        throw new Error(passwordValidation.error);
     }
 
     // Validate email

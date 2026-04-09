@@ -54,7 +54,7 @@ const validateRequiredFields = (data, requiredFields) => {
  */
 const validatePassword = (password, options = {}) => {
   const {
-    minLength = 6,
+    minLength = 8,
     requireUppercase = false,
     requireLowercase = false,
     requireNumber = false,

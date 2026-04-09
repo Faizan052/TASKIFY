@@ -95,6 +95,7 @@ const stageStatusLabel = (value) => {
 
 export const createUserDashboard = ({ heading, role, allowTaskRequest = false }) => {
 	return function UserDashboard() {
+		const FLASH_MESSAGE_MS = 1500
 		const nav = useNavigate()
 		const {
 			profile,
@@ -163,6 +164,18 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 				document.removeEventListener('visibilitychange', onVisibilityChange)
 			}
 		}, [loadNotifications])
+
+		useEffect(() => {
+			if (!message) return
+			const timer = setTimeout(() => setMessage(''), FLASH_MESSAGE_MS)
+			return () => clearTimeout(timer)
+		}, [message])
+
+		useEffect(() => {
+			if (!error) return
+			const timer = setTimeout(() => setError(null), FLASH_MESSAGE_MS)
+			return () => clearTimeout(timer)
+		}, [error, setError])
 
 		const logout = useCallback(() => {
 			clearSession()
@@ -691,7 +704,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 								onClick={() => setActiveView('messages')}
 							>
 								<span className="nav-icon">💬</span>
-								<span>Messages</span>
+								<span>Chats</span>
 								{unreadMessages > 0 && <span className="message-badge">{unreadMessages}</span>}
 							</button>
 						</nav>
@@ -1177,8 +1190,8 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 
 						{activeView === 'tasks' ? (
 							<>
-								{message ? <div className="success-message">{message}</div> : null}
-								{error ? <div className="error">{error}</div> : null}
+								{message ? <div className="dashboard-alert dashboard-alert-success">{message}</div> : null}
+								{error ? <div className="dashboard-alert dashboard-alert-error">{error}</div> : null}
 								{loading ? <div>Loading workspace...</div> : null}
 
 								{!loading && profile ? (
@@ -1189,7 +1202,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 
 						{/* MESSAGES VIEW */}
 						{activeView === 'messages' ? (
-							<div className="dashboard-section">
+							<div className="dashboard-chat-area">
 								<ChatMessages />
 							</div>
 						) : null}

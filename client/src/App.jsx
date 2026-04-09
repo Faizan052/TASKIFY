@@ -20,6 +20,7 @@ const ManageHrs = lazy(() => import('./pages/ManageHrs'))
 // Role-Specific Dashboards
 const HRDashboard = lazy(() => import('./pages/HRDashboard'))
 const ManagerDashboard = lazy(() => import('./pages/ManagerDashboard'))
+const ManagerTrackProgress = lazy(() => import('./pages/ManagerTrackProgress'))
 const DeveloperDashboard = lazy(() => import('./pages/DeveloperDashboard'))
 const DesignerDashboard = lazy(() => import('./pages/DesignerDashboard'))
 const TesterDashboard = lazy(() => import('./pages/TesterDashboard'))
@@ -119,6 +120,14 @@ export default function App() {
                 <ManagerDashboard />
               </PrivateRoute>
             } 
+          />
+          <Route
+            path="/manager/track/:mode/:id"
+            element={
+              <PrivateRoute>
+                <ManagerTrackProgress />
+              </PrivateRoute>
+            }
           />
           <Route 
             path="/developer" 

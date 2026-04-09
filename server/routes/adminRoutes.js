@@ -16,6 +16,7 @@ const { validateEmail } = require('../utils/validation');
 const { normalizeEmail, normalizeUsername, assertUniqueIdentity } = require('../utils/identity');
 const { protect, adminOnly } = require('../middleware/auth');
 const upload = require('../middleware/upload');
+const { buildPerformanceReport } = require('../utils/performanceReports');
 
 // Check if admin exists (GET)
 router.get('/check-exists', asyncHandler(async (req, res) => {
@@ -484,9 +485,20 @@ router.delete('/users/:id', protect, adminOnly, asyncHandler(async (req, res) =>
 
     // Remove tasks assigned to this user
     await Task.deleteMany({ assignedTo: user._id });
+    await Team.updateMany(
+        { members: user._id },
+        { $pull: { members: user._id } }
+    );
+    await Message.deleteMany({
+        $or: [
+            { sender: user._id, senderModel: 'User' },
+            { recipient: user._id, recipientModel: 'User' }
+        ]
+    });
+    await Notification.deleteMany({ recipient: user._id });
     await User.deleteOne({ _id: user._id });
 
-    res.json({ message: 'User and associated tasks removed' });
+    res.json({ message: 'User and associated data removed' });
 }));
 
 // Get all tasks
@@ -506,6 +518,135 @@ router.get('/teams', protect, adminOnly, asyncHandler(async (req, res) => {
         .populate('members', 'name email role')
         .sort({ createdAt: -1 });
     res.json(teams);
+}));
+
+router.get('/performance-report', protect, adminOnly, asyncHandler(async (req, res) => {
+    const days = Math.max(1, Math.min(parseInt(req.query.days, 10) || 180, 3650));
+    const sinceDate = new Date(Date.now() - (days * 24 * 60 * 60 * 1000));
+    const selectedTeamId = (req.query.teamId || '').toString().trim();
+    const selectedUserId = (req.query.userId || '').toString().trim();
+
+    const [teams, users, tasks] = await Promise.all([
+        Team.find({})
+            .populate('manager', 'name email role')
+            .populate('members', 'name email role')
+            .lean(),
+        User.find({ role: { $in: ['hr', 'manager', 'designer', 'developer', 'tester', 'client'] }, isActive: true })
+            .select('_id name email role')
+            .lean(),
+        Task.find({ createdAt: { $gte: sinceDate } })
+            .select('status deadline updatedAt manager assignedTo assignedTeam stageAssignments history managerDecision')
+            .lean()
+    ]);
+
+    let filteredUsers = users;
+    if (selectedTeamId) {
+        const selectedTeam = teams.find(team => team._id.toString() === selectedTeamId);
+        if (!selectedTeam) {
+            res.status(404);
+            throw new Error('Team not found');
+        }
+        const teamMemberIds = new Set((selectedTeam.members || []).map(member => member._id.toString()));
+        filteredUsers = filteredUsers.filter(user => teamMemberIds.has(user._id.toString()));
+    }
+
+    if (selectedUserId) {
+        filteredUsers = filteredUsers.filter(user => user._id.toString() === selectedUserId);
+    }
+
+    const report = buildPerformanceReport({ users: filteredUsers, tasks });
+
+    const metricByUserId = report.users.reduce((acc, item) => {
+        acc[item.userId.toString()] = item;
+        return acc;
+    }, {});
+
+    const teamsReport = teams.map(team => {
+        const members = (team.members || [])
+            .map(member => metricByUserId[member._id.toString()])
+            .filter(Boolean);
+
+        const summary = members.reduce((acc, item) => {
+            acc.totalAssigned += item.totalAssigned;
+            acc.successfulTasks += item.successfulTasks;
+            acc.failedTasks += item.failedTasks;
+            acc.rejectedTasks += item.rejectedTasks;
+            acc.completedOnTime += item.completedOnTime;
+            acc.delayedTasks += item.delayedTasks;
+            return acc;
+        }, { totalAssigned: 0, successfulTasks: 0, failedTasks: 0, rejectedTasks: 0, completedOnTime: 0, delayedTasks: 0 });
+
+        const denominator = summary.successfulTasks + summary.failedTasks;
+        const successRatio = denominator > 0 ? Number(((summary.successfulTasks / denominator) * 100).toFixed(2)) : 0;
+
+        return {
+            teamId: team._id,
+            teamName: team.name,
+            managerName: team.manager ? (team.manager.name || team.manager.email) : '—',
+            memberCount: (team.members || []).length,
+            successRatio,
+            ...summary
+        };
+    }).filter(team => !selectedTeamId || team.teamId.toString() === selectedTeamId);
+
+    res.json({
+        generatedAt: new Date(),
+        windowDays: days,
+        selectedTeamId: selectedTeamId || null,
+        selectedUserId: selectedUserId || null,
+        ...report,
+        teams: teamsReport,
+        filters: {
+            users: users.map(user => ({ _id: user._id, name: user.name, role: user.role })),
+            teams: teams.map(team => ({ _id: team._id, name: team.name }))
+        }
+    });
+}));
+
+router.get('/performance-report/user/:userId', protect, adminOnly, asyncHandler(async (req, res) => {
+    const user = await User.findById(req.params.userId).select('_id name email role isActive').lean();
+    if (!user) {
+        res.status(404);
+        throw new Error('User not found');
+    }
+
+    const tasks = await Task.find({})
+        .select('title status deadline updatedAt manager assignedTo assignedTeam stageAssignments history managerDecision createdAt')
+        .populate('assignedTeam', 'name')
+        .lean();
+
+    const report = buildPerformanceReport({ users: [user], tasks });
+    res.json({
+        generatedAt: new Date(),
+        user,
+        report: report.users[0] || null,
+        chart: report.chart
+    });
+}));
+
+router.get('/performance-report/team/:teamId', protect, adminOnly, asyncHandler(async (req, res) => {
+    const team = await Team.findById(req.params.teamId)
+        .populate('manager', 'name email role')
+        .populate('members', 'name email role isActive')
+        .lean();
+
+    if (!team) {
+        res.status(404);
+        throw new Error('Team not found');
+    }
+
+    const memberIds = (team.members || []).map(member => member._id.toString());
+    const users = await User.find({ _id: { $in: memberIds } }).select('_id name email role isActive').lean();
+    const tasks = await Task.find({})
+        .select('title status deadline updatedAt manager assignedTo assignedTeam stageAssignments history managerDecision createdAt')
+        .lean();
+
+    const report = buildPerformanceReport({ users, tasks });
+    res.json({
+        generatedAt: new Date(),
+        team,
+        report
+    });
 }));
 
 // Update task
@@ -721,32 +862,6 @@ router.patch('/users/:id/toggle-status', protect, adminOnly, asyncHandler(async 
             isActive: user.isActive
         }
     });
-}));
-
-// Delete user
-router.delete('/users/:id', protect, adminOnly, asyncHandler(async (req, res) => {
-    const user = await User.findById(req.params.id);
-    
-    if (!user) {
-        res.status(404);
-        throw new Error('User not found');
-    }
-
-    // Delete related data
-    await Task.updateMany(
-        { assignedTo: user._id },
-        { $pull: { assignedTo: user._id } }
-    );
-    await Team.updateMany(
-        { members: user._id },
-        { $pull: { members: user._id } }
-    );
-    await Message.deleteMany({ sender: user._id });
-    await Notification.deleteMany({ user: user._id });
-
-    await User.deleteOne({ _id: user._id });
-
-    res.json({ message: 'User and related data deleted successfully' });
 }));
 
 // Admin resets HR password

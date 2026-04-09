@@ -6,9 +6,10 @@ import { formatDate, formatRole, getTaskStage, formatCategories } from '../utils
 import ProfileSettings from '../components/ProfileSettings'
 import ChatMessages from '../components/ChatMessages'
 import DashboardWelcomeBanner from '../components/DashboardWelcomeBanner'
+import '../styles/manager-assignment.css'
 
 const emptyTeamForm = { name: '', designerId: '', developerId: '', testerId: '' }
-const emptyAssignment = { teamId: '', designerDeadline: '', developerDeadline: '', testerDeadline: '' }
+const emptyAssignment = { mode: 'team', teamId: '', userId: '', designerDeadline: '', developerDeadline: '', testerDeadline: '' }
 const emptyProfileForm = { name: '', phone: '', department: '', profilePicture: null }
 const formatMemberLabel = (member) => {
 	if (!member) return '—'
@@ -19,6 +20,7 @@ const formatMemberLabel = (member) => {
 	return name
 }
 const AUTO_REFRESH_INTERVAL = 30000
+const FLASH_MESSAGE_MS = 1500
 
 const STATUS = {
 	AWAITING_MANAGER_ASSIGNMENT: 'Awaiting Manager Assignment',
@@ -77,7 +79,7 @@ export default function ManagerDashboard(){
 	const [tasks, setTasks] = useState([])
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState(null)
-	const [_message, setMessage] = useState('')
+	const [message, setMessage] = useState('')
 	const [teamForm, setTeamForm] = useState(emptyTeamForm)
 	const [memberInputs, setMemberInputs] = useState({})
 	const [creatingTeam, setCreatingTeam] = useState(false)
@@ -95,19 +97,36 @@ export default function ManagerDashboard(){
 	const [profileForm, setProfileForm] = useState(emptyProfileForm)
 	const [_updatingProfile, setUpdatingProfile] = useState(false)
 	const [availableUsers, setAvailableUsers] = useState({ designers: [], developers: [], testers: [] })
+	const [performanceReport, setPerformanceReport] = useState(null)
+	const [decisionInputs, setDecisionInputs] = useState({})
+	const [decidingTaskId, setDecidingTaskId] = useState('')
+
+	useEffect(() => {
+		if (!message) return
+		const timer = setTimeout(() => setMessage(''), FLASH_MESSAGE_MS)
+		return () => clearTimeout(timer)
+	}, [message])
+
+	useEffect(() => {
+		if (!error) return
+		const timer = setTimeout(() => setError(null), FLASH_MESSAGE_MS)
+		return () => clearTimeout(timer)
+	}, [error])
 
 	const loadDashboard = useCallback(async (withSpinner = false) => {
 		if (withSpinner) setLoading(true)
 		setError(null)
 		try{
-			const [profileData, teamData, taskData] = await Promise.all([
+			const [profileData, teamData, taskData, reportData] = await Promise.all([
 				apiFetch('/api/user/profile'),
 				apiFetch('/api/manager/teams'),
-				apiFetch('/api/manager/tasks')
+				apiFetch('/api/manager/tasks'),
+				apiFetch('/api/manager/performance-report')
 			])
 			setProfile(profileData)
 			setTeams(teamData)
 			setTasks(taskData)
+			setPerformanceReport(reportData)
 		}catch(err){ setError(err.message) }
 		finally{ if (withSpinner) setLoading(false) }
 	},[])
@@ -144,11 +163,14 @@ export default function ManagerDashboard(){
 			setAvailableUsers({ designers, developers, testers })
 		} catch(err) {
 			console.error('Failed to load available users:', err)
+			setError(err.message || 'Failed to load available users')
 		}
 	}
 
 	const handleEditTeam = (team) => {
 		loadAvailableUsers()
+		setError(null)
+		setMessage('')
 		setEditingTeamId(team._id)
 		setTeamForm({
 			name: team.name,
@@ -232,10 +254,20 @@ export default function ManagerDashboard(){
 		}catch(err){ setError(err.message) }
 	}
 
+	const refreshPerformanceReport = async () => {
+		try {
+			const data = await apiFetch('/api/manager/performance-report')
+			setPerformanceReport(data)
+		} catch (err) {
+			setError(err.message)
+		}
+	}
+
 	const teamRoleLookup = useMemo(() => {
 		return teams.reduce((acc, team) => {
 			const roleMap = { designer: null, developer: null, tester: null }
-			;(team.members || []).forEach(member => {
+			const members = team.members || []
+			members.forEach(member => {
 				if ((member.role === 'designer' || member.role === 'developer' || member.role === 'tester') && !roleMap[member.role]) {
 					roleMap[member.role] = member
 				}
@@ -244,6 +276,27 @@ export default function ManagerDashboard(){
 			return acc
 		}, {})
 	}, [teams])
+
+	const managedUsers = useMemo(() => {
+		const dedupe = new Map()
+		teams.forEach(team => {
+			const members = team.members || []
+			members.forEach(member => {
+				if (!dedupe.has(member._id)) {
+					dedupe.set(member._id, member)
+				}
+			})
+		})
+		return Array.from(dedupe.values())
+	}, [teams])
+
+	const performanceByUserId = useMemo(() => {
+		const metrics = performanceReport?.users || []
+		return metrics.reduce((acc, item) => {
+			acc[item.userId] = item
+			return acc
+		}, {})
+	}, [performanceReport])
 
 	const awaitingAssignment = useMemo(() => tasks.filter(task => [
 		STATUS.AWAITING_MANAGER_ASSIGNMENT,
@@ -363,14 +416,46 @@ export default function ManagerDashboard(){
 	const setAssignmentSelection = (taskId, field, value) => {
 		setAssignmentSelections(prev => {
 			const existing = prev[taskId] ? { ...prev[taskId] } : { ...emptyAssignment }
-			const nextSelection = field === 'teamId'
-				? { ...emptyAssignment, teamId: value }
-				: { ...existing, [field]: value }
+			let nextSelection = { ...existing, [field]: value }
+			if (field === 'mode') {
+				nextSelection = value === 'team'
+					? { ...emptyAssignment, mode: 'team' }
+					: { ...emptyAssignment, mode: 'user' }
+			}
+			if (field === 'teamId') {
+				nextSelection = { ...existing, teamId: value, userId: '' }
+			}
+			if (field === 'userId') {
+				nextSelection = { ...existing, userId: value, teamId: '' }
+			}
 			return {
 				...prev,
 				[taskId]: nextSelection
 			}
 		})
+	}
+
+	const setDecisionInput = (taskId, value) => {
+		setDecisionInputs(prev => ({
+			...prev,
+			[taskId]: value
+		}))
+	}
+
+	const handleTrackTeamProgress = (teamId) => {
+		if (!teamId) {
+			setError('Select a team first to track progress')
+			return
+		}
+		nav(`/manager/track/team/${teamId}`)
+	}
+
+	const handleTrackUserProgress = (userId) => {
+		if (!userId) {
+			setError('Select an individual user first to track progress')
+			return
+		}
+		nav(`/manager/track/user/${userId}`)
 	}
 
 	const setReviewInput = (taskId, field, value) => {
@@ -384,28 +469,56 @@ export default function ManagerDashboard(){
 	}
 
 	const handleAssignTask = async (taskId) => {
-		const selection = assignmentSelections[taskId]
-		if (!selection || !selection.teamId) {
-			setError('Select a team before assigning the project')
-			return
-		}
-		const roleMap = teamRoleLookup[selection.teamId] || {}
-		const missingRoles = ['designer', 'developer', 'tester'].filter(role => !roleMap[role])
-		if (missingRoles.length) {
-			const labels = missingRoles.map(formatRole).join(', ')
-			setError(`Selected team is missing required roles: ${labels}`)
-			return
-		}
-		if (!selection.designerDeadline) {
-			setError('Provide a deadline for the designer stage')
-			return
+		const selection = assignmentSelections[taskId] || { ...emptyAssignment }
+		if (selection.mode === 'team') {
+			if (!selection.teamId) {
+				setError('Select a team before assigning the project')
+				return
+			}
+			const roleMap = teamRoleLookup[selection.teamId] || {}
+			const missingRoles = ['designer', 'developer', 'tester'].filter(role => !roleMap[role])
+			if (missingRoles.length) {
+				const labels = missingRoles.map(formatRole).join(', ')
+				setError(`Selected team is missing required roles: ${labels}`)
+				return
+			}
+			if (!selection.designerDeadline) {
+				setError('Provide a deadline for the designer stage')
+				return
+			}
+		} else {
+			if (!selection.userId) {
+				setError('Select a user for direct assignment')
+				return
+			}
+			const selectedUser = managedUsers.find(user => user._id === selection.userId)
+			if (!selectedUser) {
+				setError('Selected user is not available under your teams')
+				return
+			}
+			if (selectedUser.role === 'designer' && !selection.designerDeadline) {
+				setError('Provide a designer deadline for direct assignment')
+				return
+			}
+			if (selectedUser.role === 'developer' && !selection.developerDeadline) {
+				setError('Provide a developer deadline for direct assignment')
+				return
+			}
+			if (selectedUser.role === 'tester' && !selection.testerDeadline) {
+				setError('Provide a tester deadline for direct assignment')
+				return
+			}
 		}
 		setAssigningTaskId(taskId); setError(null); setMessage('')
 		try{
-			const payload = {
-				teamId: selection.teamId,
-				designerDeadline: selection.designerDeadline
+			const payload = {}
+			if (selection.mode === 'team') {
+				payload.teamId = selection.teamId
+				payload.designerDeadline = selection.designerDeadline
+			} else {
+				payload.userId = selection.userId
 			}
+			if (selection.designerDeadline) payload.designerDeadline = selection.designerDeadline
 			if (selection.developerDeadline) payload.developerDeadline = selection.developerDeadline
 			if (selection.testerDeadline) payload.testerDeadline = selection.testerDeadline
 			await apiFetch(`/api/manager/tasks/${taskId}/assign`, {
@@ -418,9 +531,37 @@ export default function ManagerDashboard(){
 				return next
 			})
 			setMessage('Team assigned. Design phase is now in progress.')
-			await refreshTasks()
+			await Promise.all([refreshTasks(), refreshPerformanceReport()])
 		}catch(err){ setError(err.message) }
 		finally{ setAssigningTaskId('') }
+	}
+
+	const handleTaskDecision = async (task, decision) => {
+		const comment = (decisionInputs[task._id] || '').trim()
+		if (decision === 'reject' && !comment) {
+			setError('Please provide feedback before rejecting this task')
+			return
+		}
+		setDecidingTaskId(task._id)
+		setError(null)
+		setMessage('')
+		try {
+			await apiFetch(`/api/manager/tasks/${task._id}/decision`, {
+				method: 'PUT',
+				body: { decision, comment }
+			})
+			setDecisionInputs(prev => {
+				const next = { ...prev }
+				delete next[task._id]
+				return next
+			})
+			setMessage(decision === 'accept' ? 'Task accepted. You can assign it now.' : 'Task rejected with feedback sent to workflow history.')
+			await Promise.all([refreshTasks(), refreshPerformanceReport()])
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setDecidingTaskId('')
+		}
 	}
 
 	const handleReviewAdvance = async (task) => {
@@ -477,6 +618,18 @@ export default function ManagerDashboard(){
 						</div>
 						<form onSubmit={handleTeamCreate}>
 							<div className="modal-body">
+								{error ? (
+									<div style={{
+										marginBottom: 10,
+										padding: '10px 12px',
+										borderRadius: 8,
+										background: '#fee2e2',
+										border: '1px solid #fca5a5',
+										color: '#b91c1c',
+										fontSize: 13,
+										fontWeight: 600
+									}}>{error}</div>
+								) : null}
 								<div className="form">
 									<label>Team name
 										<input value={teamForm.name} onChange={e=>setTeamForm(prev=>({ ...prev, name: e.target.value }))} required />
@@ -549,7 +702,7 @@ export default function ManagerDashboard(){
 									setEditingTeamId(null)
 									setTeamForm(emptyTeamForm)
 								}}>Cancel</button>
-								<button className="btn" disabled={creatingTeam}>
+								<button type="submit" className="btn" disabled={creatingTeam}>
 									{creatingTeam ? 'Saving...' : (editingTeamId ? 'Update Team' : 'Create Team')}
 								</button>
 							</div>
@@ -622,7 +775,7 @@ export default function ManagerDashboard(){
 					onClick={() => setActiveView('messages')}
 				>
 					<span className="nav-icon">💬</span>
-					<span>Messages</span>
+					<span>Chats</span>
 					{unreadMessages > 0 && <span className="message-badge">{unreadMessages}</span>}
 				</button>
 			</nav>
@@ -639,6 +792,12 @@ export default function ManagerDashboard(){
 
 			{/* Main Content Area */}
 			<div className="admin-content">
+				{message ? (
+					<div className="dashboard-alert dashboard-alert-success">{message}</div>
+				) : null}
+				{error ? (
+					<div className="dashboard-alert dashboard-alert-error">{error}</div>
+				) : null}
 				<div className="admin-main">
 					{activeView === 'overview' && (
 						<DashboardWelcomeBanner name={profile?.name} role="manager" />
@@ -856,6 +1015,36 @@ export default function ManagerDashboard(){
 												</div>
 											</div>
 										)}
+
+										{performanceReport?.users?.length ? (
+											<div style={{
+												background: '#fff',
+												borderRadius: '16px',
+												padding: '28px',
+												boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+												marginTop: '24px'
+											}}>
+												<h3 style={{margin: '0 0 18px 0', fontSize: '22px', fontWeight: 700, color: '#111827'}}>📈 Team Member Performance</h3>
+												<div style={{display: 'grid', gap: 12}}>
+													{performanceReport.users.map(item => (
+														<div key={item.userId} style={{padding: '14px', borderRadius: 10, border: '1px solid #e2e8f0', background: '#f8fafc'}}>
+															<div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8}}>
+																<div style={{fontWeight: 700, color: '#1e293b'}}>{item.name} ({formatRole(item.role)})</div>
+																<div style={{fontSize: 12, color: '#475569'}}>Success {Math.round(item.successRatio)}% • Failure {Math.round(item.failureRatio)}%</div>
+															</div>
+															<div style={{display: 'flex', gap: 10, fontSize: 12, color: '#475569', marginBottom: 8}}>
+																<span>On-time: {item.completedOnTime}</span>
+																<span>Delayed: {item.delayedTasks}</span>
+																<span>Failed: {item.failedTasks}</span>
+															</div>
+															<div style={{height: 8, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden'}}>
+																<div style={{height: '100%', width: `${Math.max(0, Math.min(100, item.successRatio))}%`, background: 'linear-gradient(90deg, #22c55e, #16a34a)'}} />
+															</div>
+														</div>
+													))}
+												</div>
+											</div>
+										) : null}
 									</>
 								)}
 
@@ -866,6 +1055,8 @@ export default function ManagerDashboard(){
 											<h3 className="dashboard-section-title">My Teams</h3>
 											<button className="btn" onClick={()=>{
 												loadAvailableUsers()
+												setError(null)
+												setMessage('')
 												setEditingTeamId(null)
 												setTeamForm(emptyTeamForm)
 												setShowTeamForm(true)
@@ -964,78 +1155,164 @@ export default function ManagerDashboard(){
 								{activeView === 'tasks' && (
 									<div className="dashboard-section">
 										<div className="dashboard-section-header">
-											<h3 className="dashboard-section-title">Tasks Awaiting Assignment</h3>
+											<div className="ma-title-wrap">
+												<h3 className="dashboard-section-title">Tasks Awaiting Assignment</h3>
+												<span className="ma-count-chip">{awaitingAssignment.length} tasks</span>
+											</div>
 										</div>
 						{awaitingAssignment.length ? (
-							<div>
+							<div className="ma-card-grid">
 								{awaitingAssignment.map(task => {
 									const selection = assignmentSelections[task._id] || { ...emptyAssignment }
 									const roleMap = selection.teamId ? (teamRoleLookup[selection.teamId] || {}) : null
-									const missingRoles = selection.teamId ? ['designer', 'developer', 'tester'].filter(role => !roleMap || !roleMap[role]) : []
+									const missingRoles = selection.mode === 'team' && selection.teamId ? ['designer', 'developer', 'tester'].filter(role => !roleMap || !roleMap[role]) : []
 									const isAssigning = assigningTaskId === task._id
+									const isDeciding = decidingTaskId === task._id
+									const decisionState = task.managerDecision?.decision || 'pending'
+									const pendingDecision = task.status === STATUS.AWAITING_MANAGER_ASSIGNMENT && decisionState !== 'accepted'
+									const selectedUser = selection.userId ? managedUsers.find(user => user._id === selection.userId) : null
 									return (
-										<div key={task._id} className="item-card">
-											<div className="item-header">
+										<div key={task._id} className="item-card ma-task-card">
+											<div className="item-header ma-task-head">
 												<h4 className="item-title">{task.title}</h4>
-												<span className="status-badge status-pending">Awaiting</span>
+												<span className="status-badge status-pending ma-awaiting-pill">Awaiting</span>
 											</div>
-											{task.description ? <div className="help" style={{marginTop:4}}>{task.description}</div> : null}
+											<div className="help ma-decision">
+												Decision: {decisionState === 'accepted' ? 'Accepted' : decisionState === 'rejected' ? 'Rejected' : 'Pending'}
+											</div>
+											{task.managerDecision?.comment ? <div className="help ma-feedback">Feedback: {task.managerDecision.comment}</div> : null}
+											{task.description ? <div className="help ma-description">{task.description}</div> : null}
 											{Array.isArray(task.attachments) && task.attachments.length ? (
-												<details style={{marginTop:4}}>
+												<details className="ma-files-box">
 													<summary>View submitted files</summary>
-													<ul style={{marginTop:4}}>
+													<ul>
 														{task.attachments.map(file => (
 															<li key={file._id || file.filename}>
-																<a href={resolveAssetUrl(`/uploads/${file.filename}`)} target="_blank" rel="noreferrer">{file.originalName || file.filename}</a>
+																<a href={resolveAssetUrl(`/uploads/${file.filename}`)} target="_blank" rel="noreferrer" className="ma-file-link">{file.originalName || file.filename}</a>
 															</li>
 														))}
 													</ul>
 												</details>
 											) : null}
-											<div className="small-row" style={{marginTop:4, alignItems:'center', gap:6}}>
-												<select value={selection.teamId} onChange={e=>setAssignmentSelection(task._id, 'teamId', e.target.value)}>
-													<option value="">Select team</option>
-													{teams.map(team => (
-																		<option key={team._id} value={team._id}>{team.name} — {getTeamStatus(team._id).label}</option>
-													))}
-												</select>
-											</div>
-											{selection.teamId ? (
+											{pendingDecision ? (
 												<>
-																	{(() => {
-																		const status = getTeamStatus(selection.teamId)
-																		return (
-																			<div style={{ marginTop: 6 }}>
-																				<span style={{
-																					padding: '2px 8px',
-																					borderRadius: 999,
-																					fontSize: 11,
-																					fontWeight: 700,
-																					color: status.color,
-																					background: status.background,
-																					border: `1px solid ${status.border}`
-																				}}>
-																					Team Status: {status.label}
-																				</span>
-																			</div>
-																		)
-																	})()}
-													<div className="help" style={{marginTop:4}}>
-														Designer: {formatMemberLabel(roleMap?.designer)} | Developer: {formatMemberLabel(roleMap?.developer)} | Tester: {formatMemberLabel(roleMap?.tester)}
-													</div>
-													{missingRoles.length ? <div className="error" style={{marginTop:6}}>Team is missing: {missingRoles.map(formatRole).join(', ')}</div> : null}
-													<div className="small-row" style={{marginTop:6, gap:6, alignItems:'center', flexWrap:'wrap'}}>
-														<label style={{display:'flex', flexDirection:'column', fontSize:12}}>
-															Designer deadline
-															<input type="datetime-local" value={selection.designerDeadline} onChange={e=>setAssignmentSelection(task._id, 'designerDeadline', e.target.value)} />
-														</label>
-														<button className="btn small" onClick={()=>handleAssignTask(task._id)} disabled={isAssigning || missingRoles.length > 0}>
-															{isAssigning ? 'Assigning...' : 'Start design'}
-														</button>
+													<textarea
+														value={decisionInputs[task._id] || ''}
+														onChange={e => setDecisionInput(task._id, e.target.value)}
+														placeholder="Add feedback (required for rejection)"
+														className="ma-input ma-textarea"
+													/>
+													<div className="small-row ma-action-row">
+														<button className="btn small" onClick={()=>handleTaskDecision(task, 'accept')} disabled={isDeciding}>{isDeciding ? 'Saving...' : 'Accept'}</button>
+														<button className="btn small danger-action" onClick={()=>handleTaskDecision(task, 'reject')} disabled={isDeciding}>{isDeciding ? 'Saving...' : 'Reject'}</button>
 													</div>
 												</>
-											) : <div className="help" style={{marginTop:4}}>Choose a team to see role assignments.</div>}
-											<div className="item-meta" style={{marginTop:12, paddingTop:12, borderTop:'1px solid #e2e8f0'}}>
+											) : (
+												<>
+													<div className="ma-mode-label">Choose assignment type</div>
+													<div className="ma-mode-switch" role="tablist" aria-label="Assignment mode">
+														<button
+															type="button"
+															className={`ma-mode-btn ${selection.mode === 'team' ? 'active' : ''}`}
+															onClick={() => setAssignmentSelection(task._id, 'mode', 'team')}
+														>
+															Team
+														</button>
+														<button
+															type="button"
+															className={`ma-mode-btn ${selection.mode === 'user' ? 'active' : ''}`}
+															onClick={() => setAssignmentSelection(task._id, 'mode', 'user')}
+														>
+															Individual
+														</button>
+													</div>
+													{selection.mode === 'team' ? (
+														<div className="small-row ma-select-row">
+															<select value={selection.teamId} onChange={e=>setAssignmentSelection(task._id, 'teamId', e.target.value)} className="ma-input ma-select">
+																<option value="">Select team</option>
+																{teams.map(team => (
+																	<option key={team._id} value={team._id}>{team.name} — {getTeamStatus(team._id).label}</option>
+																))}
+															</select>
+															<button
+																type="button"
+																className="btn small ma-track-btn"
+																onClick={() => handleTrackTeamProgress(selection.teamId)}
+																disabled={!selection.teamId}
+															>
+																Track Progress
+															</button>
+														</div>
+													) : (
+														<div className="ma-user-block">
+															<div className="ma-user-label">Select individual user</div>
+															<div className="small-row ma-select-row">
+															<select value={selection.userId} onChange={e=>setAssignmentSelection(task._id, 'userId', e.target.value)} className="ma-input ma-select">
+																<option value="">Select individual user</option>
+																{managedUsers.map(user => {
+																	const metric = performanceByUserId[user._id]
+																	return <option key={user._id} value={user._id}>{user.name} ({formatRole(user.role)}){metric ? ` • Success ${Math.round(metric.successRatio)}%` : ''}</option>
+																})}
+															</select>
+															<button
+																type="button"
+																className="btn small ma-track-btn"
+																onClick={() => handleTrackUserProgress(selection.userId)}
+																disabled={!selection.userId}
+															>
+																Track Progress
+															</button>
+															</div>
+														</div>
+													)}
+													{selection.mode === 'team' && selection.teamId ? (
+														<>
+															<div className="help ma-team-summary">Designer: {formatMemberLabel(roleMap?.designer)} | Developer: {formatMemberLabel(roleMap?.developer)} | Tester: {formatMemberLabel(roleMap?.tester)}</div>
+															{missingRoles.length ? <div className="error" style={{marginTop:6}}>Team is missing: {missingRoles.map(formatRole).join(', ')}</div> : null}
+														</>
+													) : null}
+													{selection.mode === 'user' && selectedUser ? <div className="help ma-selected-user">Selected: {selectedUser.name} ({formatRole(selectedUser.role)})</div> : null}
+													<div className="ma-deadline-box">
+														<div className="ma-deadline-title">Assignment Deadline</div>
+														<div className="small-row ma-deadline-row">
+															{selection.mode === 'team' ? (
+																<>
+																	<label className="ma-deadline-field">
+																		Designer deadline
+																		<input className="ma-input" type="datetime-local" value={selection.designerDeadline} onChange={e=>setAssignmentSelection(task._id, 'designerDeadline', e.target.value)} />
+																	</label>
+																	<label className="ma-deadline-field">
+																		Developer deadline (optional)
+																		<input className="ma-input" type="datetime-local" value={selection.developerDeadline} onChange={e=>setAssignmentSelection(task._id, 'developerDeadline', e.target.value)} />
+																	</label>
+																	<label className="ma-deadline-field">
+																		Tester deadline (optional)
+																		<input className="ma-input" type="datetime-local" value={selection.testerDeadline} onChange={e=>setAssignmentSelection(task._id, 'testerDeadline', e.target.value)} />
+																	</label>
+																</>
+															) : (
+																<label className="ma-deadline-field ma-user-deadline-field">
+																	{selectedUser ? `${formatRole(selectedUser.role)} deadline` : 'Selected user deadline'}
+																	<input
+																		className="ma-input"
+																		type="datetime-local"
+																		value={selectedUser?.role === 'designer' ? selection.designerDeadline : selectedUser?.role === 'developer' ? selection.developerDeadline : selection.testerDeadline}
+																		onChange={e=>{
+																			if (!selectedUser) return
+																			const field = selectedUser.role === 'designer' ? 'designerDeadline' : selectedUser.role === 'developer' ? 'developerDeadline' : 'testerDeadline'
+																			setAssignmentSelection(task._id, field, e.target.value)
+																		}}
+																	/>
+																</label>
+															)}
+															<button className="btn small ma-assign-btn" onClick={()=>handleAssignTask(task._id)} disabled={isAssigning || (selection.mode === 'team' && missingRoles.length > 0)}>
+																{isAssigning ? 'Assigning...' : 'Assign Task'}
+															</button>
+														</div>
+													</div>
+												</>
+											)}
+											<div className="item-meta ma-meta-row">
 												<span><span className="item-meta-label">Due:</span> {formatDate(task.deadline)}</span>
 												<span><span className="item-meta-label">Status:</span> {task.status}</span>
 											</div>
@@ -1043,7 +1320,7 @@ export default function ManagerDashboard(){
 									)
 								})}
 							</div>
-						) : <p style={{color:'var(--muted)', padding:'16px', textAlign:'center', background:'#f8fafc', borderRadius:'8px'}}>No tasks waiting on assignment.</p>}
+						) : <p className="ma-empty-state">No tasks waiting on assignment.</p>}
 									</div>
 								)}
 
@@ -1268,7 +1545,7 @@ export default function ManagerDashboard(){
 
 								{/* MESSAGES VIEW */}
 								{activeView === 'messages' && (
-									<div className="dashboard-section">
+									<div className="dashboard-chat-area">
 										<ChatMessages />
 									</div>
 								)}

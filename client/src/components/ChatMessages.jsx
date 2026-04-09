@@ -63,6 +63,7 @@ const InitialAvatar = ({ name, size = 'medium' }) => {
 }
 
 export default function ChatMessages({ onClose: _onClose, onUnreadCountChange }) {
+    const QUICK_EMOJIS = ['😀', '😊', '👍', '🔥', '🎉', '✅', '🙏', '💡', '🚀', '❤️']
     const [contacts, setContacts] = useState([])
     const [conversations, setConversations] = useState([])
     const [selectedContact, setSelectedContact] = useState(null)
@@ -74,6 +75,15 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
     const [unreadCount, setUnreadCount] = useState(0)
     const messagesEndRef = useRef(null)
     const [searchTerm, setSearchTerm] = useState('')
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+
+    const getEntityId = (entity) => {
+        if (!entity) return ''
+        if (typeof entity === 'string') return entity
+        if (typeof entity._id === 'string') return entity._id
+        if (entity._id && typeof entity._id.toString === 'function') return entity._id.toString()
+        return ''
+    }
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -110,15 +120,18 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
         }
     }, [])
 
-    const loadMessages = useCallback(async (contactId) => {
+    const loadMessages = useCallback(async (contactId, { forceScroll = false } = {}) => {
         if (!contactId) return
         try {
+            const shouldKeepBottom = forceScroll
             const data = await apiFetch(`/api/messages/conversation/${contactId}`)
             setMessages(data || [])
             // Mark as read
             await apiFetch(`/api/messages/read/${contactId}`, { method: 'PUT' })
             loadUnreadCount()
-            setTimeout(scrollToBottom, 100)
+            if (shouldKeepBottom) {
+                setTimeout(scrollToBottom, 100)
+            }
         } catch (err) {
             setError(err.message)
         }
@@ -135,7 +148,7 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
 
     useEffect(() => {
         if (selectedContact) {
-            loadMessages(selectedContact._id)
+            loadMessages(selectedContact._id, { forceScroll: true })
             const interval = setInterval(() => {
                 loadMessages(selectedContact._id)
             }, AUTO_REFRESH_INTERVAL)
@@ -164,7 +177,7 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
         setSending(true)
         setError(null)
         try {
-            await apiFetch('/api/messages/send', {
+            const sentMessage = await apiFetch('/api/messages/send', {
                 method: 'POST',
                 body: {
                     recipientId: selectedContact._id,
@@ -173,7 +186,14 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
                 }
             })
             setNewMessage('')
-            await loadMessages(selectedContact._id)
+            if (sentMessage && sentMessage._id) {
+                setMessages((prev) => [...prev, sentMessage])
+                setTimeout(scrollToBottom, 50)
+                await apiFetch(`/api/messages/read/${selectedContact._id}`, { method: 'PUT' })
+                await loadUnreadCount()
+            } else {
+                await loadMessages(selectedContact._id, { forceScroll: true })
+            }
             await loadConversations()
         } catch (err) {
             setError(err.message)
@@ -185,11 +205,13 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
     const handleSelectContact = (contact) => {
         setSelectedContact(contact)
         setMessages([])
+        setShowEmojiPicker(false)
     }
 
-    const _handleBack = () => {
+    const handleBack = () => {
         setSelectedContact(null)
         setMessages([])
+        setShowEmojiPicker(false)
         loadConversations()
     }
 
@@ -209,25 +231,50 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
         return d.toLocaleDateString()
     }
 
-    const filteredConversations = conversations.filter(conv => 
-        conv.user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        conv.user.role.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    const formatLastSeen = (person) => {
+        if (!person) return ''
+        if (person.isOnline) return 'Online'
+        if (!person.lastSeen) return 'Offline'
 
-    const filteredContacts = contacts.filter(contact =>
-        contact.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        contact.role.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+        const seen = new Date(person.lastSeen)
+        if (Number.isNaN(seen.getTime())) return 'Offline'
+        const diffMs = Date.now() - seen.getTime()
+        const mins = Math.max(1, Math.floor(diffMs / 60000))
+        if (mins < 60) return `Online ${mins} minute${mins === 1 ? '' : 's'} ago`
+        const hours = Math.floor(mins / 60)
+        if (hours < 24) return `Online ${hours} hour${hours === 1 ? '' : 's'} ago`
+        const days = Math.floor(hours / 24)
+        return `Online ${days} day${days === 1 ? '' : 's'} ago`
+    }
+
+    const normalizedSearch = searchTerm.toLowerCase()
+
+    const filteredConversations = conversations.filter((conv) => {
+        const userName = (conv?.user?.name || '').toLowerCase()
+        const userRole = (conv?.user?.role || '').toLowerCase()
+        return userName.includes(normalizedSearch) || userRole.includes(normalizedSearch)
+    })
+
+    const filteredContacts = contacts.filter((contact) => {
+        const contactName = (contact?.name || '').toLowerCase()
+        const contactRole = (contact?.role || '').toLowerCase()
+        return contactName.includes(normalizedSearch) || contactRole.includes(normalizedSearch)
+    })
 
     // Merge conversations and contacts - prioritize people with existing conversations
     const allPeople = []
     const seenIds = new Set()
     
     // Add people with conversations first
-    filteredConversations.forEach(conv => {
-        seenIds.add(conv.user._id)
+    filteredConversations.forEach((conv) => {
+        if (!conv?.user?._id) return
+        const conversationUserId = conv.user._id.toString()
+        seenIds.add(conversationUserId)
         allPeople.push({
             ...conv.user,
+            _id: conversationUserId,
+            name: conv.user.name || 'Unknown User',
+            role: conv.user.role || 'user',
             lastMessage: conv.lastMessage,
             lastMessageAt: conv.lastMessageAt,
             unreadCount: conv.unreadCount,
@@ -236,10 +283,15 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
     })
     
     // Add other contacts
-    filteredContacts.forEach(contact => {
-        if (!seenIds.has(contact._id)) {
+    filteredContacts.forEach((contact) => {
+        if (!contact?._id) return
+        const contactId = contact._id.toString()
+        if (!seenIds.has(contactId)) {
             allPeople.push({
                 ...contact,
+                _id: contactId,
+                name: contact.name || 'Unknown User',
+                role: contact.role || 'user',
                 hasConversation: false,
                 unreadCount: 0
             })
@@ -273,38 +325,45 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
     }
 
     return (
-        <div style={{
-            display: 'grid',
-            gridTemplateColumns: selectedContact ? '360px 1fr' : '1fr',
-            height: 'calc(100vh - 140px)',
+        <div className="chat-messages-shell" style={{
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: '520px',
+            height: '72vh',
+            maxHeight: '72vh',
             width: '100%',
             background: 'var(--card)',
             overflow: 'hidden',
-            borderRadius: 'var(--radius)',
-            boxShadow: 'var(--shadow)',
-            border: '1px solid var(--border)'
+            borderRadius: '16px',
+            boxShadow: '0 18px 38px rgba(2, 39, 74, 0.12)',
+            border: '1px solid rgba(59, 130, 246, 0.18)'
         }}>
-            {/* People List - Always Visible */}
+            {/* People List */}
+            {!selectedContact && (
             <div style={{
                 display: 'flex',
                 flexDirection: 'column',
-                borderRight: selectedContact ? '1px solid var(--border)' : 'none',
+                borderRight: 'none',
                 background: 'var(--card)',
                 position: 'relative',
-                overflow: 'hidden'
+                overflow: 'hidden',
+                flex: 1,
+                minHeight: 0
             }}>
                 
                 {/* Header */}
                 <div style={{
                     padding: '16px 20px',
                     borderBottom: '1px solid var(--border)',
-                    background: 'var(--gradient-primary)',
-                    position: 'relative',
-                    zIndex: 1,
+                    background: 'linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%)',
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 6,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    minHeight: '70px'
+                    minHeight: '70px',
+                    boxShadow: '0 8px 20px rgba(14, 116, 199, 0.25)'
                 }}>
                     <h3 style={{
                         margin: '0',
@@ -317,13 +376,21 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
                         letterSpacing: '-0.3px'
                     }}>
                         <span style={{fontSize: '24px'}}>💬</span>
-                        Messages
+                        Chats & Users
                     </h3>
                     
                 </div>
 
                 {/* Search Bar */}
-                <div style={{padding: '12px 16px', background: 'var(--card)', borderBottom: '1px solid var(--border)'}}>
+                <div style={{
+                    padding: '12px 16px',
+                    background: 'rgba(255, 255, 255, 0.96)',
+                    borderBottom: '1px solid var(--border)',
+                    position: 'sticky',
+                    top: '70px',
+                    zIndex: 5,
+                    backdropFilter: 'blur(8px)'
+                }}>
                     <div style={{position: 'relative'}}>
                         <div style={{
                             position: 'absolute',
@@ -336,7 +403,7 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
                         }}>🔍</div>
                         <input
                             type="text"
-                            placeholder="Search messages..."
+                            placeholder="Search chats or users..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             style={{
@@ -387,7 +454,9 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
                     overflowX: 'hidden',
                     position: 'relative',
                     zIndex: 1,
-                    height: 'calc(100vh - 280px)'
+                    minHeight: 0,
+                    overscrollBehavior: 'contain',
+                    WebkitOverflowScrolling: 'touch'
                 }} className="custom-scrollbar">
                     {allPeople.length === 0 ? (
                         <div style={{
@@ -525,11 +594,11 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
                                             ) : (
                                                 <div style={{
                                                     fontSize: '13px',
-                                                    color: 'var(--text-tertiary)',
-                                                    fontStyle: 'italic',
+                                                    color: person.isOnline ? '#16a34a' : 'var(--text-tertiary)',
+                                                    fontStyle: person.isOnline ? 'normal' : 'italic',
                                                     flex: 1
                                                 }}>
-                                                    Start conversation
+                                                    {formatLastSeen(person)}
                                                 </div>
                                             )}
                                             <div style={{
@@ -552,6 +621,7 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
                     )}
                 </div>
             </div>
+            )}
 
             {/* Chat Area */}
             {selectedContact ? (
@@ -559,7 +629,10 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
                     display: 'flex',
                     flexDirection: 'column',
                     background: '#fff',
-                    position: 'relative'
+                    position: 'relative',
+                    flex: 1,
+                    minHeight: 0,
+                    overflow: 'hidden'
                 }}>
                     {/* Decorative background pattern */}
                     <div style={{
@@ -582,10 +655,32 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
                         gap: '14px',
                         background: 'var(--card)',
                         minHeight: '70px',
-                        position: 'relative',
-                        zIndex: 1,
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 6,
+                        boxShadow: '0 8px 20px rgba(2, 39, 74, 0.12)',
+                        backdropFilter: 'blur(8px)'
                     }}>
+                        <button
+                            type="button"
+                            onClick={handleBack}
+                            style={{
+                                width: '34px',
+                                height: '34px',
+                                borderRadius: '8px',
+                                border: '1px solid var(--border)',
+                                background: 'var(--card)',
+                                color: 'var(--text-primary)',
+                                cursor: 'pointer',
+                                fontSize: '16px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}
+                            aria-label="Back to chats"
+                        >
+                            ←
+                        </button>
                         <InitialAvatar name={selectedContact.name} size="medium" />
                         <div style={{flex: 1}}>
                             <div style={{
@@ -599,18 +694,17 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
                             <div style={{
                                 fontSize: '13px',
                                 color: 'var(--text-secondary)',
-                                textTransform: 'capitalize',
                                 fontWeight: 500
                             }}>
-                                {selectedContact.role}
+                                {formatLastSeen(selectedContact)}
                             </div>
                         </div>
                         <div style={{
                             width: '10px',
                             height: '10px',
                             borderRadius: '50%',
-                            background: 'var(--color-success)',
-                            boxShadow: '0 0 0 3px var(--color-success-light)'
+                            background: selectedContact?.isOnline ? 'var(--color-success)' : '#94a3b8',
+                            boxShadow: selectedContact?.isOnline ? '0 0 0 3px var(--color-success-light)' : '0 0 0 3px rgba(148, 163, 184, 0.15)'
                         }} />
                     </div>
 
@@ -625,7 +719,9 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
                         gap: '12px',
                         position: 'relative',
                         zIndex: 1,
-                        height: 'calc(100vh - 340px)'
+                        minHeight: 0,
+                        overscrollBehavior: 'contain',
+                        WebkitOverflowScrolling: 'touch'
                     }} className="custom-scrollbar">
                         {messages.length === 0 ? (
                             <div style={{
@@ -659,7 +755,9 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
                             </div>
                         ) : (
                             messages.map((msg) => {
-                                const isSent = msg.sender._id !== selectedContact._id
+                                const senderId = getEntityId(msg.sender)
+                                const selectedId = getEntityId(selectedContact)
+                                const isSent = senderId !== selectedId
                                 return (
                                     <div
                                         key={msg._id}
@@ -752,14 +850,15 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
                         onSubmit={handleSendMessage}
                         style={{
                             padding: '16px 20px',
-                            background: 'var(--card)',
+                            background: 'rgba(255, 255, 255, 0.98)',
                             borderTop: '1px solid var(--border)',
                             display: 'flex',
                             gap: '12px',
                             alignItems: 'center',
                             position: 'relative',
                             zIndex: 1,
-                            boxShadow: '0 -1px 3px rgba(0,0,0,0.05)'
+                            boxShadow: '0 -8px 18px rgba(2, 39, 74, 0.08)',
+                            backdropFilter: 'blur(6px)'
                         }}
                     >
                         <input
@@ -788,6 +887,66 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
                                 e.target.style.boxShadow = 'none'
                             }}
                         />
+                        <div style={{ position: 'relative' }}>
+                            <button
+                                type="button"
+                                onClick={() => setShowEmojiPicker((prev) => !prev)}
+                                style={{
+                                    width: '44px',
+                                    height: '44px',
+                                    background: 'var(--surface-active)',
+                                    color: 'var(--text-primary)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: 'var(--radius)',
+                                    fontSize: '20px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    transition: 'var(--transition)',
+                                    flexShrink: 0
+                                }}
+                                aria-label="Add emoji"
+                            >
+                                😊
+                            </button>
+                            {showEmojiPicker && (
+                                <div style={{
+                                    position: 'absolute',
+                                    bottom: '52px',
+                                    right: 0,
+                                    background: 'var(--card)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: '12px',
+                                    boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                                    padding: '8px',
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(5, 1fr)',
+                                    gap: '6px',
+                                    zIndex: 12
+                                }}>
+                                    {QUICK_EMOJIS.map((emoji) => (
+                                        <button
+                                            key={emoji}
+                                            type="button"
+                                            onClick={() => {
+                                                setNewMessage((prev) => `${prev}${emoji}`)
+                                                setShowEmojiPicker(false)
+                                            }}
+                                            style={{
+                                                border: 'none',
+                                                background: 'transparent',
+                                                fontSize: '20px',
+                                                cursor: 'pointer',
+                                                padding: '4px'
+                                            }}
+                                        >
+                                            {emoji}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                         <button
                             type="submit"
                             disabled={sending || !newMessage.trim()}

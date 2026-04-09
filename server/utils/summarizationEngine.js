@@ -121,20 +121,23 @@ function summarizeDocument(text) {
  * @returns {string} Detected category
  */
 function identifyRequestType(text) {
-  if (!text) return 'general';
+  if (!text) return 'other';
 
   const lowerText = normalizeText(text).toLowerCase();
 
   const categoryPatterns = {
     website: ['website', 'web application', 'web app', 'web portal', 'landing page', 'web development'],
+    'mobile-app': ['mobile app', 'android', 'ios', 'flutter', 'react native'],
+    'desktop-app': ['desktop app', 'windows app', 'wpf', 'winforms', 'c# desktop', 'electron desktop'],
     design: ['design', 'ui', 'ux', 'user interface', 'mockup', 'wireframe', 'prototype', 'graphic'],
     testing: ['test', 'testing', 'qa', 'quality assurance', 'bug', 'defect'],
-    development: ['develop', 'code', 'programming', 'software development', 'application development'],
-    maintenance: ['maintain', 'maintenance', 'update', 'upgrade', 'modification', 'enhancement']
+    api: ['api', 'endpoint', 'rest', 'graphql', 'backend service'],
+    database: ['database', 'sql', 'table', 'schema', 'query', 'migration', 'stored procedure'],
+    updation: ['maintain', 'maintenance', 'update', 'upgrade', 'modification', 'enhancement', 'patch', 'fix']
   };
 
   let maxScore = 0;
-  let detectedCategory = 'general';
+  let detectedCategory = 'other';
 
   for (const [category, keywords] of Object.entries(categoryPatterns)) {
     let score = 0;

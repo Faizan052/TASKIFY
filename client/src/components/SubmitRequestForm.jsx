@@ -48,13 +48,13 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 	}
 
 	const analyzeDocument = async () => {
-		if (!files.length) {
-			setError('Please upload a document first')
+		if (!form.deadline) {
+			setError('Please set a deadline first')
 			return
 		}
 
-		if (!form.deadline) {
-			setError('Please set a deadline first')
+		if (!form.title || !form.description) {
+			setError('Please provide title and description before feasibility check')
 			return
 		}
 
@@ -65,7 +65,9 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 
 		try {
 			const payload = new FormData()
-			payload.append('document', files[0])
+			if (files[0]) {
+				payload.append('document', files[0])
+			}
 			payload.append('deadline', form.deadline)
 			payload.append('category', form.category)
 			payload.append('title', form.title)
@@ -103,6 +105,19 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 			return { bg: '#fee2e2', color: '#991b1b', label: 'High Risk' }
 		}
 		return { bg: '#fef3c7', color: '#92400e', label: 'Medium Risk' }
+	}
+
+	const formatEstimatedEffort = () => {
+		if (!aiAnalysis) return '—'
+		const hours = Number(aiAnalysis.estimatedHours || 0)
+		if (hours > 0 && hours < 8) {
+			return `${hours} hour${hours === 1 ? '' : 's'}`
+		}
+		if (hours >= 8) {
+			const daysFromHours = (hours / 8).toFixed(2).replace(/\.00$/, '')
+			return `${daysFromHours} days`
+		}
+		return `${aiAnalysis.estimatedDays} days`
 	}
 
 	const submit = async (e) => {
@@ -278,7 +293,7 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 					/>
 				</div>
 
-				{files.length > 0 && form.deadline && (
+				{form.deadline && form.title && form.description && (
 					<div style={{ marginBottom: '24px' }}>
 						<button
 							type="button"
@@ -308,7 +323,7 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 								e.currentTarget.style.boxShadow = analyzing ? 'none' : '0 10px 24px rgba(102, 126, 234, 0.30)'
 							}}
 						>
-							{analyzing ? 'Checking Feasibility...' : '✨ Check Feasibility'}
+							{analyzing ? 'Checking Feasibility...' : `✨ Check Feasibility${files.length ? ' (with attachment)' : ''}`}
 						</button>
 					</div>
 				)}
@@ -464,7 +479,7 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 					<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px', marginBottom: '14px' }}>
 						<div style={{ background: '#f8fafc', borderRadius: '10px', padding: '10px 12px' }}>
 							<div style={{ fontSize: '12px', color: '#64748b' }}>Estimated</div>
-							<div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>{aiAnalysis.estimatedDays} days</div>
+							<div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>{formatEstimatedEffort()}</div>
 						</div>
 						<div style={{ background: '#f8fafc', borderRadius: '10px', padding: '10px 12px' }}>
 							<div style={{ fontSize: '12px', color: '#64748b' }}>Deadline Window</div>
@@ -473,6 +488,21 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 						<div style={{ background: getRiskTone().bg, borderRadius: '10px', padding: '10px 12px' }}>
 							<div style={{ fontSize: '12px', color: '#64748b' }}>Risk</div>
 							<div style={{ fontSize: '15px', fontWeight: 700, color: getRiskTone().color }}>{getRiskTone().label}</div>
+						</div>
+					</div>
+
+					<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px', marginBottom: '14px' }}>
+						<div style={{ background: '#eef2ff', borderRadius: '10px', padding: '10px 12px', border: '1px solid #c7d2fe' }}>
+							<div style={{ fontSize: '12px', color: '#4338ca' }}>Confidence</div>
+							<div style={{ fontSize: '15px', fontWeight: 700, color: '#312e81' }}>{(aiAnalysis.analysis?.confidence || 'medium').toUpperCase()}</div>
+						</div>
+						<div style={{ background: '#f0fdf4', borderRadius: '10px', padding: '10px 12px', border: '1px solid #bbf7d0' }}>
+							<div style={{ fontSize: '12px', color: '#15803d' }}>Req. Quality</div>
+							<div style={{ fontSize: '15px', fontWeight: 700, color: '#166534' }}>{(aiAnalysis.analysis?.requirementQuality || 'medium').toUpperCase()}</div>
+						</div>
+						<div style={{ background: '#ecfeff', borderRadius: '10px', padding: '10px 12px', border: '1px solid #a5f3fc' }}>
+							<div style={{ fontSize: '12px', color: '#0e7490' }}>Quality Score</div>
+							<div style={{ fontSize: '15px', fontWeight: 700, color: '#155e75' }}>{aiAnalysis.analysis?.requirementQualityScore ?? '—'}/10</div>
 						</div>
 					</div>
 

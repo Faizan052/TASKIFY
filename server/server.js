@@ -13,6 +13,15 @@ const app = express();
 // Small hardening/perf tweak
 app.disable('x-powered-by');
 
+// Baseline security headers (helmet-style lightweight hardening)
+app.use((req, res, next) => {
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+});
+
 // CORS - allow client origin(s)
 const allowedOrigins = (process.env.CLIENT_URL || '').split(',').map(value => value.trim()).filter(Boolean);
 allowedOrigins.push('http://localhost:5173', 'http://localhost:3000');
@@ -48,7 +57,15 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
     etag: true,
     lastModified: true,
     maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0,
-    setHeaders: (res) => {
+    setHeaders: (res, filePath) => {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+
+        const normalized = String(filePath || '').toLowerCase();
+        const isArchive = normalized.endsWith('.zip') || normalized.endsWith('.rar') || normalized.endsWith('.7z');
+        if (isArchive) {
+            res.setHeader('Content-Disposition', 'attachment');
+        }
+
         if (process.env.NODE_ENV === 'production') {
             res.setHeader('Cache-Control', 'public, max-age=3600');
         }
@@ -129,16 +146,38 @@ app.use((err, req, res, _next) => {
 
 const DEFAULT_PORT = parseInt(process.env.PORT, 10) || 3000;
 
+const listenWithPortFallback = (appInstance, initialPort, maxAttempts = 10) => {
+    return new Promise((resolve, reject) => {
+        let attempts = 0;
+
+        const tryListen = (port) => {
+            const server = appInstance.listen({ port, host: '0.0.0.0' }, () => {
+                resolve({ server, port });
+            });
+
+            server.on('error', (err) => {
+                if (err && err.code === 'EADDRINUSE' && attempts < maxAttempts) {
+                    attempts += 1;
+                    const nextPort = port + 1;
+                    console.warn(`Port ${port} is already in use. Trying ${nextPort}...`);
+                    return tryListen(nextPort);
+                }
+                reject(err);
+            });
+        };
+
+        tryListen(initialPort);
+    });
+};
+
 const start = async () => {
     try {
         await connectDB();
-        const portToUse = DEFAULT_PORT;
+        const { port: portToUse } = await listenWithPortFallback(app, DEFAULT_PORT);
         process.env.PORT = portToUse;
-        app.listen({ port: portToUse, host: '0.0.0.0' }, () => {
-            const url = `http://localhost:${portToUse}`;
-            console.log(`Environment PORT=${process.env.PORT || '(not set)'} -> Server running on ${url}`);
-            console.log(`Open ${url} in your browser (clickable in many terminals)`);
-        });
+        const url = `http://localhost:${portToUse}`;
+        console.log(`Environment PORT=${process.env.PORT || '(not set)'} -> Server running on ${url}`);
+        console.log(`Open ${url} in your browser (clickable in many terminals)`);
     } catch (err) {
         console.error('Failed to start server:', err);
         process.exit(1);

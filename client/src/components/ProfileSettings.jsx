@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { apiFetch, resolveAssetUrl } from '../api';
-import { getPreferredTheme, toggleTheme } from '../theme';
+import { CATEGORY_OPTIONS, formatCategories } from '../utils/helpers';
 import ResetDatabaseDialog from './ResetDatabaseDialog';
 
 const formatRoleLabel = (value) => (value ? value.charAt(0).toUpperCase() + value.slice(1) : '');
@@ -9,6 +9,9 @@ const buildAvatarFallback = (nameOrEmail) => {
   const value = (nameOrEmail || '').trim();
   return value ? value.charAt(0).toUpperCase() : 'U';
 };
+
+const ROLES_WITH_CATEGORY_EDIT = ['developer', 'designer', 'tester'];
+const FLASH_MESSAGE_MS = 1500;
 
 export default function ProfileSettings({
   kind = 'user',
@@ -24,13 +27,13 @@ export default function ProfileSettings({
   const [resetting, setResetting] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [themeVersion, setThemeVersion] = useState(0);
   const [showResetDialog, setShowResetDialog] = useState(false);
 
   const [basicForm, setBasicForm] = useState({
     name: '',
     phone: '',
     department: '',
+    categories: [],
     photoFile: null,
   });
 
@@ -76,14 +79,6 @@ export default function ProfileSettings({
     }
   }, [profile]);
 
-  const themeLabel = useMemo(() => {
-	void themeVersion;
-    const current = (typeof document !== 'undefined' && document.documentElement.dataset.theme)
-      ? document.documentElement.dataset.theme
-      : getPreferredTheme();
-    return current === 'dark' ? 'Dark' : 'Light';
-  }, [themeVersion]);
-
   const canUpdatePassword = useMemo(() => {
     if (kind === 'admin') return true;
     if (!profile) return false;
@@ -93,6 +88,27 @@ export default function ProfileSettings({
 
   const basicEndpoint = kind === 'admin' ? '/api/admin/profile/basic' : '/api/user/profile/basic';
   const credentialsEndpoint = kind === 'admin' ? '/api/admin/credentials' : '/api/user/credentials';
+  const canEditCategories = kind !== 'admin' && ROLES_WITH_CATEGORY_EDIT.includes((profile?.role || '').toLowerCase());
+
+  const profileCategories = useMemo(() => {
+    if (Array.isArray(profile?.categories) && profile.categories.length > 0) {
+      return profile.categories;
+    }
+    if (profile?.category) {
+      return [profile.category];
+    }
+    return [];
+  }, [profile]);
+
+  const toggleCategory = (categoryValue) => {
+    setBasicForm((prev) => {
+      const current = Array.isArray(prev.categories) ? prev.categories : [];
+      if (current.includes(categoryValue)) {
+        return { ...prev, categories: current.filter((item) => item !== categoryValue) };
+      }
+      return { ...prev, categories: [...current, categoryValue] };
+    });
+  };
 
   const openEdit = () => {
     setError('');
@@ -102,6 +118,7 @@ export default function ProfileSettings({
       name: kind === 'admin' ? (profile?.username || '') : (profile?.name || ''),
       phone: profile?.phone || '',
       department: profile?.department || '',
+      categories: profileCategories,
       photoFile: null,
     });
   };
@@ -126,6 +143,12 @@ export default function ProfileSettings({
       }
       formData.append('phone', typeof basicForm.phone === 'string' ? basicForm.phone : '');
       formData.append('department', typeof basicForm.department === 'string' ? basicForm.department : '');
+      if (canEditCategories) {
+        if (!Array.isArray(basicForm.categories) || basicForm.categories.length === 0) {
+          throw new Error('Please select at least one category.');
+        }
+        formData.append('categories', JSON.stringify(basicForm.categories));
+      }
       if (basicForm.photoFile) {
         formData.append('profilePhoto', basicForm.photoFile);
       }
@@ -163,13 +186,6 @@ export default function ProfileSettings({
     }
   };
 
-  const onToggleTheme = () => {
-    setError('');
-    const next = toggleTheme();
-    setMessage(`Theme set to ${next === 'dark' ? 'Dark' : 'Light'}.`);
-    setThemeVersion((v) => v + 1);
-  };
-
   const onResetDatabase = async (selectedOptions) => {
     setResetting(true);
     setError('');
@@ -190,6 +206,18 @@ export default function ProfileSettings({
       setResetting(false);
     }
   };
+
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(() => setMessage(''), FLASH_MESSAGE_MS);
+    return () => clearTimeout(timer);
+  }, [message]);
+
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(''), FLASH_MESSAGE_MS);
+    return () => clearTimeout(timer);
+  }, [error]);
 
   if (!profile) {
     return (
@@ -244,6 +272,7 @@ export default function ProfileSettings({
               <div className="profile-fields">
                 <div className="profile-field"><span className="k">Phone</span><span className="v">{profile.phone || '—'}</span></div>
                 <div className="profile-field"><span className="k">Department</span><span className="v">{profile.department || '—'}</span></div>
+                {canEditCategories ? <div className="profile-field"><span className="k">Categories</span><span className="v">{formatCategories(profileCategories)}</span></div> : null}
               </div>
             </div>
           </div>
@@ -256,7 +285,6 @@ export default function ProfileSettings({
           <div className="settings-actions">
             <button className="btn" onClick={openEdit}>Edit Profile</button>
             <button className="btn btn-outline" onClick={openCredentials}>Update Login Credentials</button>
-            <button className="btn btn-outline" onClick={onToggleTheme}>Theme: {themeLabel}</button>
             {kind === 'admin' && (
               <button 
                 className="btn reset-db-btn" 
@@ -290,6 +318,43 @@ export default function ProfileSettings({
                   Profile Photo
                   <input type="file" accept="image/png,image/jpeg" onChange={(e) => setBasicForm((p) => ({ ...p, photoFile: e.target.files && e.target.files[0] ? e.target.files[0] : null }))} />
                 </label>
+                {canEditCategories ? (
+                  <label style={{ gridColumn: '1 / -1' }}>
+                    Categories
+                    <div style={{
+                      marginTop: '8px',
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                      gap: '8px'
+                    }}>
+                      {CATEGORY_OPTIONS.map((option) => {
+                        const checked = (basicForm.categories || []).includes(option.value);
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => toggleCategory(option.value)}
+                            style={{
+                              textAlign: 'left',
+                              padding: '8px 10px',
+                              borderRadius: '8px',
+                              border: checked ? '1px solid #667eea' : '1px solid #d1d5db',
+                              background: checked ? 'rgba(102, 126, 234, 0.12)' : '#fff',
+                              color: checked ? '#4338ca' : '#334155',
+                              fontWeight: checked ? 700 : 500,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div style={{ marginTop: '6px', fontSize: '12px', color: '#64748b' }}>
+                      Selected: {formatCategories(basicForm.categories || [])}
+                    </div>
+                  </label>
+                ) : null}
               </div>
               <div className="settings-footer">
                 <button className="btn" disabled={savingBasic}>{savingBasic ? 'Saving...' : 'Save'}</button>

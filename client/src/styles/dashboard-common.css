@@ -138,6 +138,16 @@
   margin-bottom: 0;
 }
 
+.dashboard-chat-area {
+  --chat-dashboard-offset: 118px;
+  margin-bottom: 48px;
+  min-height: calc(100vh - 260px);
+}
+
+.dashboard-chat-area:last-child {
+  margin-bottom: 0;
+}
+
 .dashboard-section-header {
   display: flex;
   justify-content: space-between;
@@ -476,6 +486,11 @@
   
   .dashboard-section {
     padding: 20px 16px;
+  }
+
+  .dashboard-chat-area {
+    --chat-dashboard-offset: 90px;
+    min-height: calc(100vh - 220px);
   }
   
   .stats-grid {

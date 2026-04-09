@@ -30,6 +30,10 @@ const adminSchema = new mongoose.Schema({
     profilePhoto: {
         type: String,
         default: ''
+    },
+    lastSeen: {
+        type: Date,
+        default: Date.now
     }
 }, {
     timestamps: true

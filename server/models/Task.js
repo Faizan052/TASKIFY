@@ -132,6 +132,26 @@ const taskSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
     },
+    managerDecision: {
+        decision: {
+            type: String,
+            enum: ['pending', 'accepted', 'rejected', null],
+            default: null
+        },
+        comment: {
+            type: String,
+            default: ''
+        },
+        reviewedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+            default: null
+        },
+        reviewedAt: {
+            type: Date,
+            default: null
+        }
+    },
     stageAssignments: {
         designer: {
             type: assignmentStageSchema,
@@ -191,8 +211,8 @@ const taskSchema = new mongoose.Schema({
 taskSchema.index({ status: 1, createdAt: -1 });
 taskSchema.index({ currentStage: 1 });
 taskSchema.index({ createdBy: 1, status: 1 });
-taskSchema.index({ 'design.user': 1 });
-taskSchema.index({ 'development.user': 1 });
-taskSchema.index({ 'testing.user': 1 });
+taskSchema.index({ 'stageAssignments.designer.user': 1 });
+taskSchema.index({ 'stageAssignments.developer.user': 1 });
+taskSchema.index({ 'stageAssignments.tester.user': 1 });
 
 module.exports = mongoose.model('Task', taskSchema);

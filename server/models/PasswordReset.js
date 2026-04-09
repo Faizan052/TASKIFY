@@ -19,6 +19,14 @@ const passwordResetSchema = new mongoose.Schema({
     otp: {
         type: String
     },
+    otpAttempts: {
+        type: Number,
+        default: 0
+    },
+    lockUntil: {
+        type: Date,
+        default: null
+    },
     newPassword: {
         type: String
     },

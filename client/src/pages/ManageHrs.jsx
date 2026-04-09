@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../api'
 
 const emptyForm = { name: '', email: '', password: '' }
+const FLASH_MESSAGE_MS = 1500
 
 export default function ManageHrs(){
 	const nav = useNavigate()
@@ -27,6 +28,18 @@ export default function ManageHrs(){
 	}
 
 	useEffect(()=>{ loadHrs() },[])
+
+	useEffect(() => {
+		if (!message) return
+		const timer = setTimeout(() => setMessage(''), FLASH_MESSAGE_MS)
+		return () => clearTimeout(timer)
+	}, [message])
+
+	useEffect(() => {
+		if (!error) return
+		const timer = setTimeout(() => setError(null), FLASH_MESSAGE_MS)
+		return () => clearTimeout(timer)
+	}, [error])
 
 	const handleCreateChange = (field, value) => {
 		setCreateForm(prev => ({ ...prev, [field]: value }))
@@ -92,8 +105,8 @@ export default function ManageHrs(){
 				<button className="btn btn-outline" onClick={()=>nav('/admin')}>Back to Dashboard</button>
 			</div>
 
-			{message && <div style={{background:'#e6f7ef', color:'#106433', padding:'8px 10px', borderRadius:6, marginBottom:8}}>{message}</div>}
-			{error && <div className="error" style={{marginBottom:8}}>{error}</div>}
+			{message && <div className="dashboard-alert dashboard-alert-success">{message}</div>}
+			{error && <div className="dashboard-alert dashboard-alert-error">{error}</div>}
 			{loading && <div>Loading HR records...</div>}
 
 			{!loading && (

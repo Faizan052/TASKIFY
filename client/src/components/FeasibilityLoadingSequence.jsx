@@ -4,25 +4,25 @@ const STEPS = [
   {
     id: 1,
     icon: '📄',
-    title: 'Reading Document',
-    description: 'Analyzing document content...',
-    duration: 2000,
+    title: 'Reading Request',
+    description: 'Analyzing title, scope, and supporting content...',
+    duration: 1800,
     progressMax: 33
   },
   {
     id: 2,
-    icon: '📅',
-    title: 'Matching Deadlines',
-    description: 'Calculating timeline feasibility...',
-    duration: 2000,
+    icon: '🧠',
+    title: 'Scoring Complexity',
+    description: 'Evaluating requirement clarity and technical complexity...',
+    duration: 1900,
     progressMax: 66
   },
   {
     id: 3,
-    icon: '✨',
+    icon: '📅',
     title: 'Generating Results',
-    description: 'Preparing feasibility report...',
-    duration: 1500,
+    description: 'Preparing feasibility and risk report...',
+    duration: 1700,
     progressMax: 100
   }
 ];

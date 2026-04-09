@@ -68,7 +68,7 @@ export default function DashboardWelcomeBanner({ name, role }) {
   const [messageIndex, setMessageIndex] = useState(0)
 
   useEffect(() => {
-    const clockId = setInterval(() => setNow(new Date()), 60000)
+    const clockId = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(clockId)
   }, [])
 
@@ -82,6 +82,17 @@ export default function DashboardWelcomeBanner({ name, role }) {
   const greeting = getGreeting(now.getHours())
   const displayName = name || 'User'
   const currentMessage = messages[messageIndex] || messages[0]
+  const digitalTime = now.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+  const period = now.toLocaleTimeString([], { hour: '2-digit', hour12: true }).slice(-2)
+  const dateLabel = now.toLocaleDateString([], {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric'
+  })
 
   return (
     <div className={`welcome-widget role-${normalizedRole}`}>
@@ -105,11 +116,12 @@ export default function DashboardWelcomeBanner({ name, role }) {
 
       <div className="welcome-widget-right">
         <div className="welcome-time-chip">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5"/>
-            <path d="M12 6V12L16 14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
-          </svg>
-          <span>{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          <span className="welcome-time-label">Local Time</span>
+          <div className="welcome-time-main" aria-live="polite">
+            <span className="welcome-time-digits">{digitalTime}</span>
+            <span className="welcome-time-period">{period}</span>
+          </div>
+          <span className="welcome-time-date">{dateLabel}</span>
         </div>
       </div>
     </div>

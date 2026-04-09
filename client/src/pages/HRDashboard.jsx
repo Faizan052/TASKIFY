@@ -6,10 +6,12 @@ import { formatDate, getTaskStage, formatCategory, formatCategories, CATEGORY_OP
 import ProfileSettings from '../components/ProfileSettings'
 import ChatMessages from '../components/ChatMessages'
 import DashboardWelcomeBanner from '../components/DashboardWelcomeBanner'
+import UserProgressDashboard from '../components/UserProgressDashboard'
 
 const emptyManagerForm = { name: '', email: '', password: '', categories: [] }
 const emptyProfileForm = { name: '', phone: '', department: '', profilePicture: null }
 const AUTO_REFRESH_INTERVAL = 30000
+const FLASH_MESSAGE_MS = 1500
 const ACTIVE_MANAGER_STATUSES = [
 	'Design In Progress',
 	'Design Completed - Pending Manager Review',
@@ -45,6 +47,10 @@ export default function HRDashboard(){
 	const [_registeredUsers, setRegisteredUsers] = useState([])
 	const [categoryStats, setCategoryStats] = useState({})
 	const [showManagerCategoryModal, setShowManagerCategoryModal] = useState(false)
+	const [performanceReport, setPerformanceReport] = useState(null)
+	const [progressFilter, setProgressFilter] = useState({ teamId: '', userId: '' })
+	const [progressDetail, setProgressDetail] = useState(null)
+	const [loadingProgressDetail, setLoadingProgressDetail] = useState(false)
 
 	const teamsByManager = useMemo(() => {
 		if (!overview) return {}
@@ -130,19 +136,33 @@ export default function HRDashboard(){
 		if (withSpinner) setLoading(true)
 		setError(null)
 		try{
-			const [profileData, overviewData, taskData] = await Promise.all([
+			const [profileData, overviewData, taskData, reportData] = await Promise.all([
 				apiFetch('/api/user/profile'),
 				apiFetch('/api/hr/overview'),
-				apiFetch('/api/hr/tasks')
+				apiFetch('/api/hr/tasks'),
+				apiFetch('/api/hr/performance-report')
 			])
 			setProfile(profileData)
 			setOverview(overviewData)
 			setTasks(taskData)
+			setPerformanceReport(reportData)
 		}catch(err){ setError(err.message) }
 		finally{ if (withSpinner) setLoading(false) }
 	},[])
 
 	useEffect(()=>{ loadDashboard(true) },[loadDashboard])
+
+	useEffect(() => {
+		if (!message) return
+		const timer = setTimeout(() => setMessage(''), FLASH_MESSAGE_MS)
+		return () => clearTimeout(timer)
+	}, [message])
+
+	useEffect(() => {
+		if (!error) return
+		const timer = setTimeout(() => setError(null), FLASH_MESSAGE_MS)
+		return () => clearTimeout(timer)
+	}, [error])
 
 	useEffect(()=>{
 		const id = setInterval(()=>{ loadDashboard() }, AUTO_REFRESH_INTERVAL)
@@ -256,6 +276,59 @@ export default function HRDashboard(){
 		}catch(err){ setError(err.message) }
 	}
 
+	const refreshPerformanceReport = async (nextFilter = progressFilter) => {
+		try {
+			const params = new URLSearchParams()
+			if (nextFilter.teamId) params.set('teamId', nextFilter.teamId)
+			if (nextFilter.userId) params.set('userId', nextFilter.userId)
+			const query = params.toString()
+			const data = await apiFetch(`/api/hr/performance-report${query ? `?${query}` : ''}`)
+			setPerformanceReport(data)
+		} catch (err) {
+			setError(err.message)
+		}
+	}
+
+	const handleProgressFilterChange = async ({ teamId, userId }) => {
+		const nextFilter = { teamId: teamId || '', userId: userId || '' }
+		setProgressFilter(nextFilter)
+		await refreshPerformanceReport(nextFilter)
+	}
+
+	const viewUserProgress = async (userId) => {
+		setLoadingProgressDetail(true)
+		setActiveView('user-progress')
+		try {
+			const data = await apiFetch(`/api/hr/performance-report/user/${userId}`)
+			setProgressDetail({
+				type: 'user',
+				title: data?.user?.name || data?.user?.email || 'User',
+				metrics: data?.report || {}
+			})
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setLoadingProgressDetail(false)
+		}
+	}
+
+	const viewTeamProgress = async (teamId) => {
+		setLoadingProgressDetail(true)
+		setActiveView('user-progress')
+		try {
+			const data = await apiFetch(`/api/hr/performance-report/team/${teamId}`)
+			setProgressDetail({
+				type: 'team',
+				title: data?.team?.name || 'Team',
+				metrics: data?.report?.summary || {}
+			})
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setLoadingProgressDetail(false)
+		}
+	}
+
 	const handleManagerCreate = async (e) => {
 		e.preventDefault()
 		setSubmittingManager(true); setMessage(''); setError(null)
@@ -325,7 +398,7 @@ export default function HRDashboard(){
 				delete next[task._id]
 				return next
 			})
-			await Promise.all([refreshTasks(), refreshOverview()])
+			await Promise.all([refreshTasks(), refreshOverview(), refreshPerformanceReport()])
 		}catch(err){ setError(err.message) }
 		finally{ setAssigningTaskId('') }
 	}
@@ -345,7 +418,7 @@ export default function HRDashboard(){
 		try{
 			await apiFetch(`/api/hr/tasks/${taskId}/send-client`, { method: 'PUT' })
 			setMessage('Task forwarded to client')
-			await refreshTasks()
+			await Promise.all([refreshTasks(), refreshPerformanceReport()])
 		}catch(err){ setError(err.message) }
 		finally{ setSendingToClientId('') }
 	}
@@ -411,13 +484,17 @@ export default function HRDashboard(){
 
 					<div className="admin-nav-dropdown" onMouseEnter={(e) => e.currentTarget.classList.add('open')} onMouseLeave={(e) => e.currentTarget.classList.remove('open')}>
 						<button 
-							className={`admin-nav-btn ${['progress', 'review'].includes(activeView) ? 'active' : ''}`}
+							className={`admin-nav-btn ${['progress', 'review', 'user-progress'].includes(activeView) ? 'active' : ''}`}
 						>
 							<span className="nav-icon">👁️</span>
 							<span>View</span>
 							<span className="dropdown-arrow">▼</span>
 						</button>
 						<div className="admin-dropdown-menu">
+							<button className="dropdown-item" onClick={() => setActiveView('user-progress')}>
+								<span className="dropdown-icon">📈</span>
+								User Progress
+							</button>
 							<button className="dropdown-item" onClick={() => setActiveView('progress')}>
 								<span className="dropdown-icon">📊</span>
 								Task Progress
@@ -434,7 +511,7 @@ export default function HRDashboard(){
 					onClick={() => setActiveView('messages')}
 				>
 					<span className="nav-icon">💬</span>
-					<span>Messages</span>
+					<span>Chats</span>
 					{unreadMessages > 0 && <span className="message-badge">{unreadMessages}</span>}
 				</button>
 			</nav>
@@ -492,8 +569,8 @@ export default function HRDashboard(){
 			<div className="admin-content">
 				<div className="admin-main">
 					{loading && <div>Loading HR data...</div>}
-					{message && <div style={{background:'#e6f7ef', color:'#106433', padding:'12px 16px', borderRadius:8, marginBottom:16, border:'1px solid #c6f6d5'}}>{message}</div>}
-					{error && <div className="error">{error}</div>}
+					{message && <div className="dashboard-alert dashboard-alert-success">{message}</div>}
+					{error && <div className="dashboard-alert dashboard-alert-error">{error}</div>}
 					{!loading && profile && overview && (
 							<>
 								{/* OVERVIEW */}
@@ -720,6 +797,43 @@ export default function HRDashboard(){
 												</div>
 											</div>
 										</div>
+
+											{performanceReport?.users?.length ? (
+												<div style={{
+													marginTop: '24px',
+													background: '#fff',
+													borderRadius: '16px',
+													padding: '24px',
+													boxShadow: '0 2px 12px rgba(0,0,0,0.08)'
+												}}>
+													<h3 style={{margin: '0 0 16px 0', fontSize: '22px', fontWeight: 700, color: '#111827'}}>📊 User Performance Report</h3>
+													<div style={{display:'flex', flexWrap:'wrap', gap: 14, marginBottom: 14, fontSize: 13, color: '#475569'}}>
+														<span>Success Ratio: {Math.round(performanceReport.summary?.successRatio || 0)}%</span>
+														<span>Failure Ratio: {Math.round(performanceReport.summary?.failureRatio || 0)}%</span>
+														<span>On-time: {performanceReport.summary?.completedOnTime || 0}</span>
+														<span>Delayed: {performanceReport.summary?.delayedTasks || 0}</span>
+														<span>Failed: {performanceReport.summary?.failedTasks || 0}</span>
+													</div>
+													<div style={{display: 'grid', gap: 10}}>
+														{performanceReport.users.map(item => (
+															<div key={item.userId} style={{background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: 12}}>
+																<div style={{display:'flex', justifyContent:'space-between', marginBottom: 6}}>
+																	<span style={{fontWeight: 700, color: '#1e293b'}}>{item.name} ({item.role})</span>
+																	<span style={{fontSize: 12, color: '#475569'}}>Success {Math.round(item.successRatio)}% • Failure {Math.round(item.failureRatio)}%</span>
+																</div>
+																<div style={{display:'flex', gap: 10, fontSize: 12, color: '#64748b', marginBottom: 8}}>
+																	<span>On-time: {item.completedOnTime}</span>
+																	<span>Delayed: {item.delayedTasks}</span>
+																	<span>Failed: {item.failedTasks}</span>
+																</div>
+																<div style={{height: 8, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden'}}>
+																	<div style={{height: '100%', width: `${Math.max(0, Math.min(100, item.successRatio))}%`, background: 'linear-gradient(90deg, #22c55e, #16a34a)'}} />
+																</div>
+															</div>
+														))}
+													</div>
+												</div>
+											) : null}
 										</>
 										)}
 
@@ -771,6 +885,13 @@ export default function HRDashboard(){
 																</div>
 															</div>
 															<div style={{display: 'flex', gap: 8}}>
+																<button 
+																	className="btn small btn-outline"
+																	onClick={() => viewUserProgress(manager._id)}
+																	style={{minWidth: 110}}
+																>
+																	View Progress
+																</button>
 																<button 
 																	className="btn small btn-outline" 
 																	onClick={() => handleEditManager(manager)}
@@ -880,6 +1001,9 @@ export default function HRDashboard(){
 																		{progressPercent}%
 																	</div>
 																	<div style={{fontSize: 12, color: '#64748b'}}>Completion</div>
+																	<button className="btn small btn-outline" style={{ marginTop: 8 }} onClick={() => viewTeamProgress(team._id)}>
+																		View Progress
+																	</button>
 																</div>
 															</div>
 
@@ -924,6 +1048,21 @@ export default function HRDashboard(){
 												No teams created yet.
 											</p>
 										)}
+									</div>
+								)}
+
+								{activeView === 'user-progress' && (
+									<div style={{ width: '100%', maxWidth: '100%', margin: '0 auto' }}>
+										<UserProgressDashboard
+											report={performanceReport}
+											selectedTeamId={progressFilter.teamId}
+											selectedUserId={progressFilter.userId}
+											onFilterChange={handleProgressFilterChange}
+											onViewUserProgress={viewUserProgress}
+											onViewTeamProgress={viewTeamProgress}
+											detailView={progressDetail}
+											loadingDetail={loadingProgressDetail}
+										/>
 									</div>
 								)}
 
@@ -1078,7 +1217,7 @@ export default function HRDashboard(){
 
 								{/* MESSAGES VIEW */}
 								{activeView === 'messages' && (
-									<div className="dashboard-section">
+									<div className="dashboard-chat-area">
 										<ChatMessages />
 									</div>
 								)}

@@ -62,37 +62,6 @@ export default function Home() {
 					<Link 
 						to="/admin/register" 
 						className="admin-register-link"
-						style={{ 
-							display: 'inline-flex',
-							alignItems: 'center',
-							gap: '0.5rem',
-							padding: '0.875rem 1.75rem',
-							background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%)',
-							border: '1.5px solid rgba(102, 126, 234, 0.3)',
-							borderRadius: '12px',
-							color: '#667eea',
-							textDecoration: 'none',
-							fontSize: '0.9rem',
-							fontWeight: '600',
-							transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-							boxShadow: '0 2px 8px rgba(102, 126, 234, 0.1)',
-							position: 'relative',
-							overflow: 'hidden'
-						}}
-						onMouseEnter={(e) => {
-							e.currentTarget.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-							e.currentTarget.style.color = '#ffffff'
-							e.currentTarget.style.transform = 'translateY(-2px)'
-							e.currentTarget.style.boxShadow = '0 8px 24px rgba(102, 126, 234, 0.3)'
-							e.currentTarget.style.borderColor = 'transparent'
-						}}
-						onMouseLeave={(e) => {
-							e.currentTarget.style.background = 'linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%)'
-							e.currentTarget.style.color = '#667eea'
-							e.currentTarget.style.transform = 'translateY(0)'
-							e.currentTarget.style.boxShadow = '0 2px 8px rgba(102, 126, 234, 0.1)'
-							e.currentTarget.style.borderColor = 'rgba(102, 126, 234, 0.3)'
-						}}
 					>
 						<svg 
 							width="18" 

@@ -35,38 +35,25 @@ const allowedMime = [
     'application/pdf',
     'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'text/html',
-    'text/css',
-    'application/javascript',
-    'text/javascript',
-    'application/x-javascript',
-    'application/json',
-    'application/xml',
     'text/plain',
     'image/png',
     'image/jpeg'
 ];
 
+const allowedExtensions = new Set([
+    '.rar', '.zip', '.7z', '.pdf', '.doc', '.docx', '.txt', '.png', '.jpg', '.jpeg'
+]);
+
 const allowByExtension = (filename) => {
     if (!filename) return false;
-    const lower = filename.toLowerCase();
-    return (
-        lower.endsWith('.rar') ||
-        lower.endsWith('.zip') ||
-        lower.endsWith('.7z') ||
-        lower.endsWith('.css') ||
-        lower.endsWith('.html') ||
-        lower.endsWith('.htm') ||
-        lower.endsWith('.js') ||
-        lower.endsWith('.map') ||
-        lower.endsWith('.scss') ||
-        lower.endsWith('.less') ||
-        lower.endsWith('.txt')
-    );
+    const ext = path.extname(String(filename).toLowerCase());
+    return allowedExtensions.has(ext);
 };
 
 const fileFilter = (req, file, cb) => {
-    if (allowedMime.includes(file.mimetype) || allowByExtension(file.originalname)) {
+    const extAllowed = allowByExtension(file.originalname);
+    const mimeAllowed = allowedMime.includes(file.mimetype);
+    if (extAllowed && mimeAllowed) {
         cb(null, true);
     } else {
         cb(new Error('File type not allowed'));
@@ -78,7 +65,7 @@ const upload = multer({
     fileFilter,
     limits: {
         // Accept larger archives (e.g. multi-stage RAR uploads)
-        fileSize: 200 * 1024 * 1024
+        fileSize: 100 * 1024 * 1024
     }
 });
 
