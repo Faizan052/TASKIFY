@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch, clearSession, resolveAssetUrl } from '../api'
 import { useUnreadMessages } from '../hooks/useUnreadMessages'
-import { formatDate, formatRole, getTaskStage, formatCategories } from '../utils/helpers'
+import { formatDate, formatRole, getTaskStage, formatCategories, formatRemainingDays, getRemainingDays, formatSlackDays, getSlackDays } from '../utils/helpers'
 import ProfileSettings from '../components/ProfileSettings'
 import ChatMessages from '../components/ChatMessages'
 import DashboardWelcomeBanner from '../components/DashboardWelcomeBanner'
@@ -33,7 +33,8 @@ const STATUS = {
 	CHANGES_REQUESTED: 'Changes Requested',
 	AWAITING_HR_REVIEW: 'Awaiting HR Review',
 	AWAITING_CLIENT_REVIEW: 'Awaiting Client Review',
-	COMPLETED: 'Completed'
+	COMPLETED: 'Completed',
+	DELAYED: 'Delayed'
 }
 
 const ACTIVE_TEAM_STATUSES = [
@@ -45,20 +46,11 @@ const ACTIVE_TEAM_STATUSES = [
 	STATUS.TESTING_REVIEW,
 	STATUS.AWAITING_HR_REVIEW,
 	STATUS.AWAITING_CLIENT_REVIEW,
-	STATUS.CHANGES_REQUESTED
+	STATUS.CHANGES_REQUESTED,
+	STATUS.DELAYED
 ]
 
 const REVIEW_ACTIONS = {
-	[STATUS.DESIGN_REVIEW]: {
-		action: 'forward-developer',
-		label: 'Approve design',
-		success: 'Design approved and sent to development'
-	},
-	[STATUS.DEVELOPMENT_REVIEW]: {
-		action: 'forward-tester',
-		label: 'Approve development',
-		success: 'Development approved and sent to testing'
-	},
 	[STATUS.TESTING_REVIEW]: {
 		action: 'send-hr',
 		label: 'Send to HR',
@@ -70,6 +62,29 @@ const getReviewAction = (status) => REVIEW_ACTIONS[status] || {
 	action: 'advance',
 	label: 'Advance',
 	success: 'Task advanced'
+}
+const toDateTimeLocal = (value) => {
+	if (!value) return ''
+	const d = new Date(value)
+	if (Number.isNaN(d.getTime())) return ''
+	const pad = (n) => String(n).padStart(2, '0')
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+const getRemainingStyle = (value) => {
+	const days = getRemainingDays(value)
+	if (days !== null && days < 0) {
+		return { color: '#dc2626', fontWeight: 600 }
+	}
+	return undefined
+}
+
+const getSlackStyle = (stageDeadline, projectDeadline) => {
+	const days = getSlackDays(stageDeadline, projectDeadline)
+	if (days !== null && days < 0) {
+		return { color: '#dc2626', fontWeight: 600 }
+	}
+	return undefined
 }
 
 export default function ManagerDashboard(){
@@ -87,7 +102,6 @@ export default function ManagerDashboard(){
 	const [assigningTaskId, setAssigningTaskId] = useState('')
 	const [forwardingTaskId, setForwardingTaskId] = useState('')
 	const [showTeamForm, setShowTeamForm] = useState(false)
-	const [reviewInputs, setReviewInputs] = useState({})
 	const [activeView, setActiveView] = useState('overview')
 	const { unreadMessages } = useUnreadMessages(10000)
 	const [showProfileMenu, setShowProfileMenu] = useState(false)
@@ -100,6 +114,7 @@ export default function ManagerDashboard(){
 	const [performanceReport, setPerformanceReport] = useState(null)
 	const [decisionInputs, setDecisionInputs] = useState({})
 	const [decidingTaskId, setDecidingTaskId] = useState('')
+	const refreshInFlight = useRef(false)
 
 	useEffect(() => {
 		if (!message) return
@@ -114,6 +129,8 @@ export default function ManagerDashboard(){
 	}, [error])
 
 	const loadDashboard = useCallback(async (withSpinner = false) => {
+		if (refreshInFlight.current) return
+		refreshInFlight.current = true
 		if (withSpinner) setLoading(true)
 		setError(null)
 		try{
@@ -128,15 +145,32 @@ export default function ManagerDashboard(){
 			setTasks(taskData)
 			setPerformanceReport(reportData)
 		}catch(err){ setError(err.message) }
-		finally{ if (withSpinner) setLoading(false) }
+		finally{ 
+			if (withSpinner) setLoading(false)
+			refreshInFlight.current = false
+		}
 	},[])
 
 	useEffect(()=>{ loadDashboard(true) },[loadDashboard])
 
 	useEffect(()=>{
-		const id = setInterval(()=>{ loadDashboard() }, AUTO_REFRESH_INTERVAL)
+		const id = setInterval(()=>{ 
+			if (typeof document !== 'undefined' && document.hidden) return
+			loadDashboard() 
+		}, AUTO_REFRESH_INTERVAL)
 		return ()=>clearInterval(id)
 	},[loadDashboard])
+
+	useEffect(() => {
+		if (typeof document === 'undefined') return
+		const onVisibilityChange = () => {
+			if (!document.hidden) {
+				loadDashboard()
+			}
+		}
+		document.addEventListener('visibilitychange', onVisibilityChange)
+		return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+	}, [loadDashboard])
 
 	const logout = () => {
 		clearSession()
@@ -305,11 +339,10 @@ export default function ManagerDashboard(){
 	const inProgressTasks = useMemo(() => tasks.filter(task => [
 		STATUS.DESIGN_IN_PROGRESS,
 		STATUS.DEVELOPMENT_IN_PROGRESS,
-		STATUS.TESTING_IN_PROGRESS
+		STATUS.TESTING_IN_PROGRESS,
+		STATUS.DELAYED
 	].includes(task.status)), [tasks])
 	const reviewQueue = useMemo(() => tasks.filter(task => [
-		STATUS.DESIGN_REVIEW,
-		STATUS.DEVELOPMENT_REVIEW,
 		STATUS.TESTING_REVIEW
 	].includes(task.status)), [tasks])
 	const _withHrOrClient = useMemo(() => tasks.filter(task => [
@@ -317,6 +350,21 @@ export default function ManagerDashboard(){
 		STATUS.AWAITING_CLIENT_REVIEW
 	].includes(task.status)), [tasks])
 	const _completedTasks = useMemo(() => tasks.filter(task => task.status === STATUS.COMPLETED), [tasks])
+	const teamTaskStats = useMemo(() => {
+		const map = {}
+		for (const task of tasks) {
+			const teamId = task.assignedTeam?._id
+			if (!teamId) continue
+			if (!map[teamId]) {
+				map[teamId] = { total: 0, completed: 0 }
+			}
+			map[teamId].total += 1
+			if (task.status === STATUS.COMPLETED || task.status === STATUS.AWAITING_HR_REVIEW) {
+				map[teamId].completed += 1
+			}
+		}
+		return map
+	}, [tasks])
 
 	const teamStatusMap = useMemo(() => {
 		const statusMap = {}
@@ -458,18 +506,21 @@ export default function ManagerDashboard(){
 		nav(`/manager/track/user/${userId}`)
 	}
 
-	const setReviewInput = (taskId, field, value) => {
-		setReviewInputs(prev => ({
-			...prev,
-			[taskId]: {
-				...(prev[taskId] || {}),
-				[field]: value
-			}
-		}))
-	}
-
-	const handleAssignTask = async (taskId) => {
+	const handleAssignTask = async (task) => {
+		const taskId = task?._id
 		const selection = assignmentSelections[taskId] || { ...emptyAssignment }
+		const projectDeadline = task?.deadline ? new Date(task.deadline) : null
+		const projectDeadlineTs = projectDeadline && !Number.isNaN(projectDeadline.getTime()) ? projectDeadline.getTime() : null
+		const ensureWithinProjectDeadline = (value) => {
+			if (!value || projectDeadlineTs === null) return true
+			const date = new Date(value)
+			if (Number.isNaN(date.getTime())) return true
+			if (date.getTime() > projectDeadlineTs) {
+				setError('Deadline cannot exceed project final deadline.')
+				return false
+			}
+			return true
+		}
 		if (selection.mode === 'team') {
 			if (!selection.teamId) {
 				setError('Select a team before assigning the project')
@@ -482,8 +533,24 @@ export default function ManagerDashboard(){
 				setError(`Selected team is missing required roles: ${labels}`)
 				return
 			}
-			if (!selection.designerDeadline) {
-				setError('Provide a deadline for the designer stage')
+			if (!selection.designerDeadline || !selection.developerDeadline || !selection.testerDeadline) {
+				setError('Provide deadlines for designer, developer, and tester stages')
+				return
+			}
+			if (!ensureWithinProjectDeadline(selection.designerDeadline)
+				|| !ensureWithinProjectDeadline(selection.developerDeadline)
+				|| !ensureWithinProjectDeadline(selection.testerDeadline)) {
+				return
+			}
+			const designerDate = new Date(selection.designerDeadline)
+			const developerDate = new Date(selection.developerDeadline)
+			const testerDate = new Date(selection.testerDeadline)
+			if (developerDate.getTime() < designerDate.getTime()) {
+				setError('Developer deadline cannot be before designer deadline')
+				return
+			}
+			if (testerDate.getTime() < developerDate.getTime()) {
+				setError('Tester deadline cannot be before developer deadline')
 				return
 			}
 		} else {
@@ -507,6 +574,27 @@ export default function ManagerDashboard(){
 			if (selectedUser.role === 'tester' && !selection.testerDeadline) {
 				setError('Provide a tester deadline for direct assignment')
 				return
+			}
+			if (selectedUser.role === 'designer') {
+				if (!ensureWithinProjectDeadline(selection.designerDeadline)) return
+			}
+			if (selectedUser.role === 'developer') {
+				if (!ensureWithinProjectDeadline(selection.developerDeadline)) return
+				const designerCompletion = selection.designerDeadline ? new Date(selection.designerDeadline) : new Date()
+				const developerDate = new Date(selection.developerDeadline)
+				if (developerDate.getTime() < designerCompletion.getTime()) {
+					setError('Developer deadline cannot be before designer completion deadline')
+					return
+				}
+			}
+			if (selectedUser.role === 'tester') {
+				if (!ensureWithinProjectDeadline(selection.testerDeadline)) return
+				const developerCompletion = selection.developerDeadline ? new Date(selection.developerDeadline) : new Date()
+				const testerDate = new Date(selection.testerDeadline)
+				if (testerDate.getTime() < developerCompletion.getTime()) {
+					setError('Tester deadline cannot be before developer deadline')
+					return
+				}
 			}
 		}
 		setAssigningTaskId(taskId); setError(null); setMessage('')
@@ -567,29 +655,9 @@ export default function ManagerDashboard(){
 	const handleReviewAdvance = async (task) => {
 		const { action, success } = getReviewAction(task.status)
 		const payload = { action }
-		if (task.status === STATUS.DESIGN_REVIEW) {
-			const deadline = (reviewInputs[task._id] || {}).developerDeadline
-			if (!deadline) {
-				setError('Provide a developer deadline before forwarding to development')
-				return
-			}
-			payload.developerDeadline = deadline
-		} else if (task.status === STATUS.DEVELOPMENT_REVIEW) {
-			const deadline = (reviewInputs[task._id] || {}).testerDeadline
-			if (!deadline) {
-				setError('Provide a tester deadline before forwarding to testing')
-				return
-			}
-			payload.testerDeadline = deadline
-		}
 		setForwardingTaskId(task._id); setError(null); setMessage('')
 		try{
 			await apiFetch(`/api/user/tasks/${task._id}/status`, { method: 'PUT', body: payload })
-			setReviewInputs(prev => {
-				const next = { ...prev }
-				delete next[task._id]
-				return next
-			})
 			setMessage(success)
 			await refreshTasks()
 		}catch(err){ setError(err.message) }
@@ -979,9 +1047,9 @@ export default function ManagerDashboard(){
 												</h3>
 												<div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px'}}>
 													{teams.slice(0, 4).map(team => {
-														const teamTasks = tasks.filter(t => t.assignedTeam && t.assignedTeam._id === team._id)
-														const teamCompletedTasks = teamTasks.filter(t => t.status === STATUS.COMPLETED || t.status === STATUS.AWAITING_HR_REVIEW).length
-														const teamProgress = teamTasks.length > 0 ? Math.round((teamCompletedTasks / teamTasks.length) * 100) : 0
+														const stats = teamTaskStats[team._id] || { total: 0, completed: 0 }
+														const teamCompletedTasks = stats.completed
+														const teamProgress = stats.total > 0 ? Math.round((teamCompletedTasks / stats.total) * 100) : 0
 
 														return (
 															<div key={team._id} style={{
@@ -1007,7 +1075,7 @@ export default function ManagerDashboard(){
 																	}} />
 																</div>
 																<div style={{marginTop: '12px', fontSize: '12px', color: '#9ca3af'}}>
-																	{teamCompletedTasks} of {teamTasks.length} tasks completed
+																	{teamCompletedTasks} of {stats.total} tasks completed
 																</div>
 															</div>
 														)
@@ -1279,15 +1347,38 @@ export default function ManagerDashboard(){
 																<>
 																	<label className="ma-deadline-field">
 																		Designer deadline
-																		<input className="ma-input" type="datetime-local" value={selection.designerDeadline} onChange={e=>setAssignmentSelection(task._id, 'designerDeadline', e.target.value)} />
+																		<input
+																			className="ma-input"
+																			type="datetime-local"
+																			value={selection.designerDeadline}
+																			max={toDateTimeLocal(task.deadline)}
+																			onChange={e=>setAssignmentSelection(task._id, 'designerDeadline', e.target.value)}
+																		/>
+																		<span className="help" style={getSlackStyle(selection.designerDeadline, task.deadline)}>{formatSlackDays(selection.designerDeadline, task.deadline)}</span>
 																	</label>
 																	<label className="ma-deadline-field">
-																		Developer deadline (optional)
-																		<input className="ma-input" type="datetime-local" value={selection.developerDeadline} onChange={e=>setAssignmentSelection(task._id, 'developerDeadline', e.target.value)} />
+																		Developer deadline
+																		<input
+																			className="ma-input"
+																			type="datetime-local"
+																			value={selection.developerDeadline}
+																			min={selection.designerDeadline || ''}
+																			max={toDateTimeLocal(task.deadline)}
+																			onChange={e=>setAssignmentSelection(task._id, 'developerDeadline', e.target.value)}
+																		/>
+																		<span className="help" style={getSlackStyle(selection.developerDeadline, task.deadline)}>{formatSlackDays(selection.developerDeadline, task.deadline)}</span>
 																	</label>
 																	<label className="ma-deadline-field">
-																		Tester deadline (optional)
-																		<input className="ma-input" type="datetime-local" value={selection.testerDeadline} onChange={e=>setAssignmentSelection(task._id, 'testerDeadline', e.target.value)} />
+																		Tester deadline
+																		<input
+																			className="ma-input"
+																			type="datetime-local"
+																			value={selection.testerDeadline}
+																			min={selection.developerDeadline || ''}
+																			max={toDateTimeLocal(task.deadline)}
+																			onChange={e=>setAssignmentSelection(task._id, 'testerDeadline', e.target.value)}
+																		/>
+																		<span className="help" style={getSlackStyle(selection.testerDeadline, task.deadline)}>{formatSlackDays(selection.testerDeadline, task.deadline)}</span>
 																	</label>
 																</>
 															) : (
@@ -1297,15 +1388,34 @@ export default function ManagerDashboard(){
 																		className="ma-input"
 																		type="datetime-local"
 																		value={selectedUser?.role === 'designer' ? selection.designerDeadline : selectedUser?.role === 'developer' ? selection.developerDeadline : selection.testerDeadline}
+																			min={selectedUser?.role === 'tester' && selection.developerDeadline ? selection.developerDeadline : toDateTimeLocal(new Date())}
+																			max={toDateTimeLocal(task.deadline)}
 																		onChange={e=>{
 																			if (!selectedUser) return
 																			const field = selectedUser.role === 'designer' ? 'designerDeadline' : selectedUser.role === 'developer' ? 'developerDeadline' : 'testerDeadline'
 																			setAssignmentSelection(task._id, field, e.target.value)
 																		}}
 																	/>
+																		<span className="help" style={getSlackStyle(
+																			selectedUser?.role === 'designer'
+																				? selection.designerDeadline
+																				: selectedUser?.role === 'developer'
+																					? selection.developerDeadline
+																					: selection.testerDeadline,
+																			task.deadline
+																		)}>
+																			{formatSlackDays(
+																				selectedUser?.role === 'designer'
+																					? selection.designerDeadline
+																					: selectedUser?.role === 'developer'
+																						? selection.developerDeadline
+																					: selection.testerDeadline,
+																				task.deadline
+																			)}
+																		</span>
 																</label>
 															)}
-															<button className="btn small ma-assign-btn" onClick={()=>handleAssignTask(task._id)} disabled={isAssigning || (selection.mode === 'team' && missingRoles.length > 0)}>
+															<button className="btn small ma-assign-btn" onClick={()=>handleAssignTask(task)} disabled={isAssigning || (selection.mode === 'team' && missingRoles.length > 0)}>
 																{isAssigning ? 'Assigning...' : 'Assign Task'}
 															</button>
 														</div>
@@ -1314,6 +1424,7 @@ export default function ManagerDashboard(){
 											)}
 											<div className="item-meta ma-meta-row">
 												<span><span className="item-meta-label">Due:</span> {formatDate(task.deadline)}</span>
+												<span><span className="item-meta-label">Remaining:</span> <span style={getRemainingStyle(task.deadline)}>{formatRemainingDays(task.deadline)}</span></span>
 												<span><span className="item-meta-label">Status:</span> {task.status}</span>
 											</div>
 										</div>
@@ -1338,6 +1449,7 @@ export default function ManagerDashboard(){
 										<th style={{textAlign:'left', paddingBottom:6}}>Team</th>
 										<th style={{textAlign:'left', paddingBottom:6}}>Status</th>
 										<th style={{textAlign:'left', paddingBottom:6}}>Deadline</th>
+										<th style={{textAlign:'left', paddingBottom:6}}>Remaining</th>
 									</tr>
 								</thead>
 								<tbody>
@@ -1348,6 +1460,7 @@ export default function ManagerDashboard(){
 											<td style={{padding:'6px 4px'}}>{task.assignedTeam ? task.assignedTeam.name : '—'}</td>
 											<td style={{padding:'6px 4px'}}>{task.status}</td>
 											<td style={{padding:'6px 4px'}}>{formatDate(task.deadline)}</td>
+											<td style={{padding:'6px 4px'}}><span style={getRemainingStyle(task.deadline)}>{formatRemainingDays(task.deadline)}</span></td>
 										</tr>
 									))}
 								</tbody>
@@ -1367,9 +1480,6 @@ export default function ManagerDashboard(){
 								{reviewQueue.map(task => {
 									const isForwarding = forwardingTaskId === task._id
 									const { label } = getReviewAction(task.status)
-									const reviewInput = reviewInputs[task._id] || {}
-									const needsDeveloperDeadline = task.status === STATUS.DESIGN_REVIEW
-									const needsTesterDeadline = task.status === STATUS.DEVELOPMENT_REVIEW
 									return (
 										<li key={task._id} style={{marginBottom:8}}>
 											<div><strong>{task.title}</strong> — team {task.assignedTeam ? task.assignedTeam.name : '—'} (deadline {formatDate(task.deadline)})</div>
@@ -1384,18 +1494,6 @@ export default function ManagerDashboard(){
 														))}
 													</ul>
 												</details>
-											) : null}
-											{needsDeveloperDeadline ? (
-												<label style={{display:'inline-flex', flexDirection:'column', fontSize:12, marginTop:6}}>
-													Developer deadline
-													<input type="datetime-local" value={reviewInput.developerDeadline || ''} onChange={e=>setReviewInput(task._id, 'developerDeadline', e.target.value)} />
-												</label>
-											) : null}
-											{needsTesterDeadline ? (
-												<label style={{display:'inline-flex', flexDirection:'column', fontSize:12, marginTop:6}}>
-													Tester deadline
-													<input type="datetime-local" value={reviewInput.testerDeadline || ''} onChange={e=>setReviewInput(task._id, 'testerDeadline', e.target.value)} />
-												</label>
 											) : null}
 											<button className="btn small" style={{marginTop:6}} onClick={()=>handleReviewAdvance(task)} disabled={isForwarding}>
 												{isForwarding ? 'Sending...' : label}

@@ -13,7 +13,8 @@ const STATUS = {
     AWAITING_HR_REVIEW: 'Awaiting HR Review',
     AWAITING_CLIENT_REVIEW: 'Awaiting Client Review',
     CHANGES_REQUESTED: 'Changes Requested',
-    COMPLETED: 'Completed'
+    COMPLETED: 'Completed',
+    DELAYED: 'Delayed'
 };
 
 const STAGE = {
@@ -79,11 +80,51 @@ const notifyRoles = async ({ roles = [], message, task = null, stage = '', meta 
     await notifyUsers({ recipients: recipientIds, message, task, stage, meta });
 };
 
+const ACTIVE_STAGE_BY_CURRENT = {
+    [STAGE.DESIGN]: 'designer',
+    [STAGE.DEVELOPMENT]: 'developer',
+    [STAGE.TESTING]: 'tester'
+};
+
+const getActiveStageKey = (task) => {
+    if (!task) return null;
+    return ACTIVE_STAGE_BY_CURRENT[task.currentStage] || null;
+};
+
+const hasHistoryNote = (task, matcher) => {
+    if (!task || !Array.isArray(task.history)) return false;
+    if (matcher instanceof RegExp) {
+        return task.history.some(entry => matcher.test(entry?.note || ''));
+    }
+    const needle = (matcher || '').toString();
+    if (!needle) return false;
+    return task.history.some(entry => (entry?.note || '').includes(needle));
+};
+
+const markTaskDelayed = ({ task, stageKey, actor }) => {
+    if (!task || !stageKey) return false;
+    const assignment = task.stageAssignments?.[stageKey];
+    if (!assignment) return false;
+    assignment.status = 'delayed';
+    task.status = STATUS.DELAYED;
+    pushHistory(task, {
+        stage: task.currentStage,
+        status: task.status,
+        note: `${stageKey} deadline exceeded`,
+        actor
+    });
+    task.markModified('stageAssignments');
+    return true;
+};
+
 module.exports = {
     STATUS,
     STAGE,
     setTaskState,
     pushHistory,
     notifyUsers,
-    notifyRoles
+    notifyRoles,
+    getActiveStageKey,
+    hasHistoryNote,
+    markTaskDelayed
 };

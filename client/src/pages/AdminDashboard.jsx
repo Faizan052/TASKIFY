@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch, clearSession } from '../api'
 import { useUnreadMessages } from '../hooks/useUnreadMessages'
@@ -33,11 +33,14 @@ export default function AdminDashboard(){
 	const [progressFilter, setProgressFilter] = useState({ teamId: '', userId: '' })
 	const [progressDetail, setProgressDetail] = useState(null)
 	const [loadingProgressDetail, setLoadingProgressDetail] = useState(false)
+	const refreshInFlight = useRef(false)
 
 	const adminDetails = useMemo(() => profile && profile.admin ? profile.admin : null, [profile])
 	const displayName = adminDetails && adminDetails.username ? adminDetails.username : 'Admin'
 
 	const loadDashboard = useCallback(async (withSpinner = false) => {
+		if (refreshInFlight.current) return
+		refreshInFlight.current = true
 		if (withSpinner) setLoading(true)
 		setError(null)
 		try{
@@ -56,7 +59,10 @@ export default function AdminDashboard(){
 			setHrs(hrData)
 			setPerformanceReport(reportData)
 		}catch(err){ setError(err.message) }
-		finally{ if (withSpinner) setLoading(false) }
+		finally{ 
+			if (withSpinner) setLoading(false)
+			refreshInFlight.current = false
+		}
 	},[])
 
 	useEffect(()=>{ loadDashboard(true) },[loadDashboard])
@@ -74,9 +80,23 @@ export default function AdminDashboard(){
 	}, [error])
 
 	useEffect(()=>{
-		const id = setInterval(()=>{ loadDashboard() }, AUTO_REFRESH_INTERVAL)
+		const id = setInterval(()=>{
+			if (typeof document !== 'undefined' && document.hidden) return
+			loadDashboard()
+		}, AUTO_REFRESH_INTERVAL)
 		return () => clearInterval(id)
 	},[loadDashboard])
+
+	useEffect(() => {
+		if (typeof document === 'undefined') return
+		const onVisibilityChange = () => {
+			if (!document.hidden) {
+				loadDashboard()
+			}
+		}
+		document.addEventListener('visibilitychange', onVisibilityChange)
+		return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+	}, [loadDashboard])
 
 	const logout = () => {
 		clearSession()
@@ -371,10 +391,11 @@ export default function AdminDashboard(){
 						</div>
 						{message && <div className="admin-message">{message}</div>}
 						{error && <div className="error-message">{error}</div>}
-						<div style={{maxWidth: 720}}>
-							<ProfileSettings
+						<div className="profile-full-width">
+								<ProfileSettings
 								kind="admin"
 								view="profile"
+									className="profile-dashboard-glass"
 								profile={adminDetails}
 								onProfileUpdated={async () => {
 									await loadDashboard(false)
@@ -414,10 +435,11 @@ export default function AdminDashboard(){
 					</div>
 					{message && <div className="admin-message">{message}</div>}
 					{error && <div className="error-message">{error}</div>}
-					<div style={{maxWidth: 720}}>
-						<ProfileSettings
+						<div className="profile-full-width">
+							<ProfileSettings
 							kind="admin"
 							view="settings"
+								className="profile-dashboard-glass"
 							profile={adminDetails}
 							onProfileUpdated={async () => {
 								await loadDashboard(false)
@@ -778,7 +800,7 @@ export default function AdminDashboard(){
 						>
 							<button className="admin-nav-btn">
 								<span className="nav-icon">👥</span>
-								<span>Chats</span>
+								<span>View</span>
 								<span className="dropdown-arrow">▼</span>
 							</button>
 							{showUsersDropdown && (
@@ -844,7 +866,7 @@ export default function AdminDashboard(){
 						>
 							<button className={`admin-nav-btn ${activeView === 'user-progress' ? 'active' : ''}`}>
 								<span className="nav-icon">👁️</span>
-								<span>View</span>
+								<span>Progress</span>
 								<span className="dropdown-arrow">▼</span>
 							</button>
 							{showViewDropdown && (

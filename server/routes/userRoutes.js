@@ -8,17 +8,46 @@ const Team = require('../models/Team');
 const Notification = require('../models/Notification');
 const OTP = require('../models/OTP');
 const { generateOTP, sendOTPEmail } = require('../utils/emailService');
-const { trySendWelcomeEmail } = require('../utils/emailNotifications');
+const { trySendWelcomeEmail, trySendTaskStageEmail } = require('../utils/emailNotifications');
 const { analyzeRequestFeasibility } = require('../utils/feasibilityService');
 const { validateEmail } = require('../utils/validation');
 const { normalizeEmail, assertUniqueIdentity } = require('../utils/identity');
 const upload = require('../middleware/upload');
 const { protect } = require('../middleware/auth');
 const { roleRequired } = require('../middleware/roles');
-const { STATUS, STAGE, setTaskState, notifyUsers, notifyRoles } = require('../utils/taskWorkflow');
+const { STATUS, STAGE, setTaskState, notifyUsers, notifyRoles, getActiveStageKey, hasHistoryNote, markTaskDelayed } = require('../utils/taskWorkflow');
 
 const CATEGORY_OPTIONS = ['website', 'mobile-app', 'desktop-app', 'testing', 'updation', 'design', 'api', 'database', 'other'];
 const ROLES_REQUIRING_CATEGORY = ['developer', 'designer', 'tester'];
+
+const STAGE_ROLE_LABELS = {
+    designer: 'Designer',
+    developer: 'Developer',
+    tester: 'Tester'
+};
+
+const applyDelayCheck = async ({ task, actor }) => {
+    const stageKey = getActiveStageKey(task);
+    if (!stageKey) return false;
+    const assignment = task.stageAssignments?.[stageKey];
+    if (!assignment || assignment.status !== 'in_progress' || !assignment.deadline) return false;
+    const due = new Date(assignment.deadline);
+    if (Number.isNaN(due.getTime()) || due.getTime() >= Date.now()) return false;
+    if (assignment.status === 'delayed') return false;
+    const noteKey = `${stageKey} deadline exceeded`;
+    if (hasHistoryNote(task, noteKey)) return false;
+
+    const updated = markTaskDelayed({ task, stageKey, actor });
+    if (updated && task.manager) {
+        await notifyUsers({
+            recipients: [task.manager],
+            message: `Deadline exceeded for ${STAGE_ROLE_LABELS[stageKey]} on task ${task.title}.`,
+            task: task._id,
+            stage: task.currentStage
+        });
+    }
+    return updated;
+};
 
 const normalizeCategories = (value) => {
     if (Array.isArray(value)) {
@@ -342,6 +371,13 @@ router.get('/tasks', protect, asyncHandler(async (req, res) => {
         }
     });
 
+    for (const task of unique) {
+        const changed = await applyDelayCheck({ task, actor: req.user._id });
+        if (changed) {
+            await task.save();
+        }
+    }
+
     res.json(unique);
 }));
 
@@ -410,83 +446,9 @@ router.put('/tasks/:id/status', protect, asyncHandler(async (req, res) => {
                 throw new Error('Specify an action for manager workflow');
             }
 
-            const parseDeadline = (value, label) => {
-                if (!value) {
-                    res.status(400);
-                    throw new Error(`Provide a ${label} deadline before forwarding`);
-                }
-                const dt = new Date(value);
-                if (Number.isNaN(dt.getTime())) {
-                    res.status(400);
-                    throw new Error(`Provide a valid ${label} deadline`);
-                }
-                return dt;
-            };
-
-            if (['forward-developer', 'approve-design'].includes(normalizedAction)) {
-                if (task.currentStage !== STAGE.MANAGER_DESIGN_REVIEW) {
-                    res.status(400);
-                    throw new Error('Task is not waiting for design approval');
-                }
-                const developerAssignment = task.stageAssignments.developer || {};
-                if (!developerAssignment.user) {
-                    res.status(400);
-                    throw new Error('Assign a developer before forwarding the project');
-                }
-                const developerDeadline = parseDeadline(req.body.developerDeadline, 'developer');
-                task.stageAssignments.designer.status = 'approved';
-                task.stageAssignments.developer.status = 'in_progress';
-                task.stageAssignments.developer.submittedAt = null;
-                task.stageAssignments.developer.submissionAttachmentId = null;
-                task.stageAssignments.developer.deadline = developerDeadline;
-                task.assignedTo = developerAssignment.user;
-                setTaskState(task, {
-                    status: STATUS.DEVELOPMENT_IN_PROGRESS,
-                    stage: STAGE.DEVELOPMENT,
-                    note: 'Manager forwarded the project to development',
-                    actor: req.user._id
-                });
-                task.markModified('stageAssignments');
-                await notifyUsers({
-                    recipients: [developerAssignment.user],
-                    message: `Manager has forwarded project ${task.title} for development`,
-                    task: task._id,
-                    stage: STAGE.DEVELOPMENT
-                });
-                return saveAndRespond();
-            }
-
-            if (['forward-tester', 'approve-development'].includes(normalizedAction)) {
-                if (task.currentStage !== STAGE.MANAGER_DEVELOPMENT_REVIEW) {
-                    res.status(400);
-                    throw new Error('Task is not waiting for development approval');
-                }
-                const testerAssignment = task.stageAssignments.tester || {};
-                if (!testerAssignment.user) {
-                    res.status(400);
-                    throw new Error('Assign a tester before forwarding the project');
-                }
-                const testerDeadline = parseDeadline(req.body.testerDeadline, 'tester');
-                task.stageAssignments.developer.status = 'approved';
-                task.stageAssignments.tester.status = 'in_progress';
-                task.stageAssignments.tester.submittedAt = null;
-                task.stageAssignments.tester.submissionAttachmentId = null;
-                task.stageAssignments.tester.deadline = testerDeadline;
-                task.assignedTo = testerAssignment.user;
-                setTaskState(task, {
-                    status: STATUS.TESTING_IN_PROGRESS,
-                    stage: STAGE.TESTING,
-                    note: 'Manager forwarded the project to testing',
-                    actor: req.user._id
-                });
-                task.markModified('stageAssignments');
-                await notifyUsers({
-                    recipients: [testerAssignment.user],
-                    message: `Manager has forwarded project ${task.title} for testing`,
-                    task: task._id,
-                    stage: STAGE.TESTING
-                });
-                return saveAndRespond();
+            if (['forward-developer', 'approve-design', 'forward-tester', 'approve-development'].includes(normalizedAction)) {
+                res.status(400);
+                throw new Error('Stage forwarding is handled automatically after each submission');
             }
 
             if (['send-hr', 'finalize'].includes(normalizedAction)) {
@@ -826,26 +788,45 @@ router.post('/tasks/:id/attachments', protect, upload.single('file'), asyncHandl
             res.status(400);
             throw new Error('Design stage is not active');
         }
+        const developerAssignment = task.stageAssignments.developer || {};
+        if (!developerAssignment.user) {
+            res.status(400);
+            throw new Error('Developer assignment is missing for this task');
+        }
+        await applyDelayCheck({ task, actor: req.user._id });
         fileEntry.stage = 'design';
         task.attachments.push(fileEntry);
         const attachmentId = task.attachments[task.attachments.length - 1]._id;
-        task.stageAssignments.designer.status = 'submitted';
+        task.stageAssignments.designer.status = 'completed';
         task.stageAssignments.designer.submittedAt = timestamp;
         task.stageAssignments.designer.submissionAttachmentId = attachmentId;
-        task.assignedTo = task.manager || null;
+        task.stageAssignments.developer.status = 'in_progress';
+        task.stageAssignments.developer.submittedAt = null;
+        task.stageAssignments.developer.submissionAttachmentId = null;
+        task.assignedTo = developerAssignment.user;
         setTaskState(task, {
-            status: STATUS.DESIGN_SUBMITTED,
-            stage: STAGE.MANAGER_DESIGN_REVIEW,
-            note: 'Designer uploaded deliverable',
+            status: STATUS.DEVELOPMENT_IN_PROGRESS,
+            stage: STAGE.DEVELOPMENT,
+            note: 'Designer completed the stage; development activated',
             actor: req.user._id
         });
         task.markModified('stageAssignments');
+        const developer = await User.findById(developerAssignment.user).select('name email role');
         await notifyUsers({
-            recipients: task.manager ? [task.manager] : [],
-            message: 'Designer has uploaded project files.',
+            recipients: developer ? [developer._id] : [],
+            message: 'Designer has completed the task. It is now your turn to proceed.',
             task: task._id,
-            stage: STAGE.MANAGER_DESIGN_REVIEW
+            stage: STAGE.DEVELOPMENT
         });
+        if (developer?.email) {
+            await trySendTaskStageEmail({
+                email: developer.email,
+                name: developer.name || developer.email,
+                roleLabel: 'Developer',
+                taskTitle: task.title,
+                message: 'Designer has completed the task. It is now your turn to proceed.'
+            });
+        }
     } else if (role === 'developer') {
         if (!task.stageAssignments.developer.user || task.stageAssignments.developer.user.toString() !== req.user._id.toString()) {
             res.status(403);
@@ -855,26 +836,45 @@ router.post('/tasks/:id/attachments', protect, upload.single('file'), asyncHandl
             res.status(400);
             throw new Error('Development stage is not active');
         }
+        const testerAssignment = task.stageAssignments.tester || {};
+        if (!testerAssignment.user) {
+            res.status(400);
+            throw new Error('Tester assignment is missing for this task');
+        }
+        await applyDelayCheck({ task, actor: req.user._id });
         fileEntry.stage = 'development';
         task.attachments.push(fileEntry);
         const attachmentId = task.attachments[task.attachments.length - 1]._id;
-        task.stageAssignments.developer.status = 'submitted';
+        task.stageAssignments.developer.status = 'completed';
         task.stageAssignments.developer.submittedAt = timestamp;
         task.stageAssignments.developer.submissionAttachmentId = attachmentId;
-        task.assignedTo = task.manager || null;
+        task.stageAssignments.tester.status = 'in_progress';
+        task.stageAssignments.tester.submittedAt = null;
+        task.stageAssignments.tester.submissionAttachmentId = null;
+        task.assignedTo = testerAssignment.user;
         setTaskState(task, {
-            status: STATUS.DEVELOPMENT_SUBMITTED,
-            stage: STAGE.MANAGER_DEVELOPMENT_REVIEW,
-            note: 'Developer uploaded deliverable',
+            status: STATUS.TESTING_IN_PROGRESS,
+            stage: STAGE.TESTING,
+            note: 'Developer completed the stage; testing activated',
             actor: req.user._id
         });
         task.markModified('stageAssignments');
+        const tester = await User.findById(testerAssignment.user).select('name email role');
         await notifyUsers({
-            recipients: task.manager ? [task.manager] : [],
-            message: 'Developer has uploaded the project files.',
+            recipients: tester ? [tester._id] : [],
+            message: 'Developer has completed the task. Testing phase is now active.',
             task: task._id,
-            stage: STAGE.MANAGER_DEVELOPMENT_REVIEW
+            stage: STAGE.TESTING
         });
+        if (tester?.email) {
+            await trySendTaskStageEmail({
+                email: tester.email,
+                name: tester.name || tester.email,
+                roleLabel: 'Tester',
+                taskTitle: task.title,
+                message: 'Developer has completed the task. Testing phase is now active.'
+            });
+        }
     } else if (role === 'tester') {
         if (!task.stageAssignments.tester.user || task.stageAssignments.tester.user.toString() !== req.user._id.toString()) {
             res.status(403);
@@ -884,26 +884,39 @@ router.post('/tasks/:id/attachments', protect, upload.single('file'), asyncHandl
             res.status(400);
             throw new Error('Testing stage is not active');
         }
+        await applyDelayCheck({ task, actor: req.user._id });
         fileEntry.stage = 'testing';
         task.attachments.push(fileEntry);
         const attachmentId = task.attachments[task.attachments.length - 1]._id;
-        task.stageAssignments.tester.status = 'submitted';
+        task.stageAssignments.tester.status = 'completed';
         task.stageAssignments.tester.submittedAt = timestamp;
         task.stageAssignments.tester.submissionAttachmentId = attachmentId;
         task.assignedTo = task.manager || null;
         setTaskState(task, {
             status: STATUS.TESTING_SUBMITTED,
             stage: STAGE.MANAGER_FINAL_REVIEW,
-            note: 'Tester uploaded deliverable',
+            note: 'Tester completed the stage; manager final review pending',
             actor: req.user._id
         });
         task.markModified('stageAssignments');
         await notifyUsers({
             recipients: task.manager ? [task.manager] : [],
-            message: 'Tester has uploaded test files.',
+            message: 'Testing completed. Task is ready for final review.',
             task: task._id,
             stage: STAGE.MANAGER_FINAL_REVIEW
         });
+        if (task.manager) {
+            const managerUser = await User.findById(task.manager).select('name email role');
+            if (managerUser?.email) {
+                await trySendTaskStageEmail({
+                    email: managerUser.email,
+                    name: managerUser.name || managerUser.email,
+                    roleLabel: 'Manager',
+                    taskTitle: task.title,
+                    message: 'Testing completed. Task is ready for final review.'
+                });
+            }
+        }
     } else if (role === 'client') {
         fileEntry.stage = 'client-feedback';
         task.attachments.push(fileEntry);

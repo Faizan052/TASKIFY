@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch, clearSession, resolveAssetUrl, uploadWithProgress } from '../api'
 import { useUnreadMessages } from '../hooks/useUnreadMessages'
-import { formatDate, formatRole, formatFileSize, getTaskStage } from '../utils/helpers'
+import { formatDate, formatRole, formatFileSize, getTaskStage, formatRemainingDays, getRemainingDays, formatSlackDays, getSlackDays } from '../utils/helpers'
 import { useUserWorkspace } from '../hooks/useUserWorkspace'
 import ProfileSettings from '../components/ProfileSettings'
 import ChatMessages from '../components/ChatMessages'
@@ -21,7 +21,8 @@ const STATUS = {
 	AWAITING_HR_REVIEW: 'Awaiting HR Review',
 	AWAITING_CLIENT_REVIEW: 'Awaiting Client Review',
 	CHANGES_REQUESTED: 'Changes Requested',
-	COMPLETED: 'Completed'
+	COMPLETED: 'Completed',
+	DELAYED: 'Delayed'
 }
 
 const STAGE_KEY_BY_ROLE = {
@@ -68,6 +69,8 @@ const formatPerson = (value) => {
 
 const formatSize = (size) => formatFileSize(size)
 
+const formatIndex = (index) => String(index + 1).padStart(2, '0')
+
 const formatSpeed = (bytesPerSecond) => {
 	if (typeof bytesPerSecond !== 'number' || Number.isNaN(bytesPerSecond) || !Number.isFinite(bytesPerSecond)) {
 		return ''
@@ -88,9 +91,29 @@ const stageStatusLabel = (value) => {
 			return 'Approved'
 		case 'revisions':
 			return 'Needs revisions'
+		case 'completed':
+			return 'Completed'
+		case 'delayed':
+			return 'Delayed'
 		default:
 			return value || 'Pending'
 	}
+}
+
+const getRemainingStyle = (value) => {
+	const days = getRemainingDays(value)
+	if (days !== null && days < 0) {
+		return { color: '#dc2626', fontWeight: 600 }
+	}
+	return undefined
+}
+
+const getSlackStyle = (stageDeadline, projectDeadline) => {
+	const days = getSlackDays(stageDeadline, projectDeadline)
+	if (days !== null && days < 0) {
+		return { color: '#dc2626', fontWeight: 600 }
+	}
+	return undefined
 }
 
 export const createUserDashboard = ({ heading, role, allowTaskRequest = false }) => {
@@ -113,6 +136,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 		const [uploadProgress, setUploadProgress] = useState({})
 		const [notifications, setNotifications] = useState([])
 		const [notificationsLoading, setNotificationsLoading] = useState(true)
+		const notificationsLoadedRef = useRef(false)
 		const [_showNotifications, _setShowNotifications] = useState(false)
 		const { unreadMessages } = useUnreadMessages(10000)
 
@@ -120,6 +144,51 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 		const effectiveRole = role || (profile ? profile.role : '')
 		const assignmentKey = STAGE_KEY_BY_ROLE[effectiveRole] || null
 		const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications])
+		const taskStats = useMemo(() => {
+			const total = taskList.length
+			let active = 0
+			let completed = 0
+			let awaitingReview = 0
+			let inProgress = 0
+			let pending = 0
+			let submitted = 0
+			let approved = 0
+			const recentTasks = taskList.slice(0, 5)
+
+			for (const task of taskList) {
+				if (task.status !== STATUS.COMPLETED && task.status !== STATUS.AWAITING_CLIENT_REVIEW) {
+					active += 1
+				}
+				if (task.status === STATUS.COMPLETED) {
+					completed += 1
+				}
+				const assignment = getAssignment(task)
+				if (assignment) {
+					if (assignment.status === 'submitted') awaitingReview += 1
+					if (assignment.status === 'in_progress') inProgress += 1
+					if (assignment.status === 'pending') pending += 1
+					if (assignment.status === 'submitted') submitted += 1
+					if (assignment.status === 'approved') approved += 1
+				}
+			}
+
+			const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0
+			const completionPercent = total > 0 ? (completed / total) * 100 : 0
+
+			return {
+				total,
+				active,
+				completed,
+				awaitingReview,
+				inProgress,
+				pending,
+				submitted,
+				approved,
+				completionRate,
+				completionPercent,
+				recentTasks
+			}
+		}, [getAssignment, taskList])
 		const getTaskStatusStage = useCallback((status) => {
 			const stage = getTaskStage(status)
 			return {
@@ -129,31 +198,45 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 			}
 		}, [])
 
-		const loadNotifications = useCallback(async () => {
+		const loadNotifications = useCallback(async ({ silent = false } = {}) => {
 			try {
-				setNotificationsLoading(true)
+				if (!silent) {
+					setNotificationsLoading(true)
+				}
 				const data = await apiFetch('/api/user/notifications?limit=50')
-				setNotifications(Array.isArray(data) ? data : [])
+				const next = Array.isArray(data) ? data : []
+				setNotifications((prev) => {
+					if (!Array.isArray(prev) || prev.length === 0) return next
+					if (prev.length !== next.length) return next
+					const prevFirst = prev[0]?._id
+					const prevLast = prev[prev.length - 1]?._id
+					const nextFirst = next[0]?._id
+					const nextLast = next[next.length - 1]?._id
+					return prevFirst === nextFirst && prevLast === nextLast ? prev : next
+				})
 			} catch (err) {
 				setError(err.message)
 			} finally {
-				setNotificationsLoading(false)
+				if (!silent || !notificationsLoadedRef.current) {
+					setNotificationsLoading(false)
+				}
+				notificationsLoadedRef.current = true
 			}
 		}, [setError])
 
 		useEffect(() => {
-			const refreshNotifications = () => {
+			const refreshNotifications = (silent = false) => {
 				if (typeof document !== 'undefined' && document.hidden) return
-				loadNotifications()
+				loadNotifications({ silent })
 			}
 
-			refreshNotifications()
+			refreshNotifications(false)
 			const id = setInterval(() => {
-				refreshNotifications()
+				refreshNotifications(true)
 			}, NOTIFICATION_REFRESH_MS)
 			const onVisibilityChange = () => {
 				if (!document.hidden) {
-					refreshNotifications()
+					refreshNotifications(true)
 				}
 			}
 
@@ -311,7 +394,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 			return taskList.filter((task) => {
 				const assignment = getAssignment(task)
 				if (!assignmentBelongsToUser(assignment)) return false
-				return ['in_progress', 'revisions'].includes(assignment.status)
+				return ['in_progress', 'revisions', 'delayed'].includes(assignment.status)
 			})
 		}, [assignmentBelongsToUser, assignmentKey, getAssignment, profile, taskList])
 
@@ -327,7 +410,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 			if (!assignmentKey || !profile) return []
 			return taskList.filter((task) => {
 				const assignment = getAssignment(task)
-				return assignmentBelongsToUser(assignment) && assignment.status === 'approved'
+				return assignmentBelongsToUser(assignment) && ['approved', 'completed'].includes(assignment.status)
 			})
 		}, [assignmentBelongsToUser, assignmentKey, getAssignment, profile, taskList])
 
@@ -343,12 +426,11 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 		const clientInDelivery = useMemo(
 			() => taskList.filter((task) => [
 				STATUS.DESIGN_IN_PROGRESS,
-				STATUS.DESIGN_SUBMITTED,
 				STATUS.DEVELOPMENT_IN_PROGRESS,
-				STATUS.DEVELOPMENT_SUBMITTED,
 				STATUS.TESTING_IN_PROGRESS,
 				STATUS.TESTING_SUBMITTED,
-				STATUS.AWAITING_HR_REVIEW
+				STATUS.AWAITING_HR_REVIEW,
+				STATUS.DELAYED
 			].includes(task.status)),
 			[taskList]
 		)
@@ -362,6 +444,8 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 			() => taskList.filter((task) => task.status === STATUS.COMPLETED),
 			[taskList]
 		)
+
+		const clientAllTasks = useMemo(() => taskList.slice(), [taskList])
 
 		const renderAttachmentList = useCallback((task) => {
 			let files = Array.isArray(task.attachments) ? [...task.attachments] : []
@@ -426,7 +510,13 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 					if (!hasData) return null
 					return (
 						<li key={key} style={{ fontSize: 13 }}>
-							<strong>{label}</strong>: {formatPerson(info.user)} — {stageStatusLabel(info.status)}
+								<strong>{label}</strong>: {formatPerson(info.user)} — {stageStatusLabel(info.status)}
+								{info.deadline ? (
+									<span style={{ marginLeft: 6, color: '#64748b' }}>
+										Deadline {formatDate(info.deadline)}{' '}
+										<span style={getSlackStyle(info.deadline, task.deadline)}>({formatSlackDays(info.deadline, task.deadline)})</span>
+									</span>
+								) : null}
 							{info.submittedAt ? <span style={{ marginLeft: 6, color: '#777' }}>submitted {formatDate(info.submittedAt, true)}</span> : null}
 						</li>
 					)
@@ -444,17 +534,58 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 				<div className="dashboard-section">
 					<h2 className="dashboard-section-title">{title}</h2>
 					<div className="items-list">
-						{collection.map((task) => {
+						{collection.map((task, index) => {
 							const assignment = getAssignment(task) || {}
 							const isUploading = uploadingTaskId === task._id
 							const progress = uploadProgress[task._id]
 							return (
-								<div key={task._id} className="item-card">
-									<div className="item-title">{task.title}</div>
-									<div className="item-meta">Project status: <span className="status-badge">{task.status}</span></div>
-									<div className="item-meta">Stage status: <span className="status-badge">{stageStatusLabel(assignment.status)}</span></div>
-									<div className="item-meta">Project due: {formatDate(task.deadline)}{assignment.deadline ? ` — Stage due: ${formatDate(assignment.deadline)}` : ''}</div>
-									<div className="item-meta">Manager: {formatPerson(task.manager)} | Team: {task.assignedTeam ? task.assignedTeam.name : '—'}</div>
+								<div key={task._id} className="item-card task-card">
+									<div className="task-card-head">
+										<div className="task-card-title">
+											<span className="task-index-badge">{formatIndex(index)}</span>
+											<span className="item-title">{task.title}</span>
+										</div>
+										<div className="task-card-status">
+											<span className="status-badge">{task.status}</span>
+											<span className="status-badge">{stageStatusLabel(assignment.status)}</span>
+										</div>
+									</div>
+									<div className="task-meta-grid">
+										<div className="task-meta-item">
+											<span className="task-meta-label">Project due</span>
+											<span className="task-meta-value">
+												{task.deadline ? (
+													<>
+														{formatDate(task.deadline)}{' '}
+														<span style={getRemainingStyle(task.deadline)}>
+															({formatRemainingDays(task.deadline)})
+														</span>
+													</>
+												) : '—'}
+											</span>
+										</div>
+										<div className="task-meta-item">
+											<span className="task-meta-label">Stage due</span>
+											<span className="task-meta-value">
+												{assignment.deadline ? (
+													<>
+														{formatDate(assignment.deadline)}{' '}
+														<span style={getSlackStyle(assignment.deadline, task.deadline)}>
+															({formatSlackDays(assignment.deadline, task.deadline)})
+														</span>
+													</>
+												) : '—'}
+											</span>
+										</div>
+										<div className="task-meta-item">
+											<span className="task-meta-label">Manager</span>
+											<span className="task-meta-value">{formatPerson(task.manager)}</span>
+										</div>
+										<div className="task-meta-item">
+											<span className="task-meta-label">Team</span>
+											<span className="task-meta-value">{task.assignedTeam ? task.assignedTeam.name : '—'}</span>
+										</div>
+									</div>
 									{allowUploadInSection ? (
 										<div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
 											<input
@@ -484,12 +615,12 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 										</div>
 									) : null}
 									{renderChangeRequests(task)}
-									<details style={{ marginTop: 12 }}>
+									<details className="task-details" style={{ marginTop: 12 }}>
 										<summary>Attachments</summary>
 										{renderAttachmentList(task)}
 									</details>
 									{Array.isArray(task.history) && task.history.length ? (
-										<details style={{ marginTop: 12 }}>
+										<details className="task-details" style={{ marginTop: 12 }}>
 											<summary>History</summary>
 											<ul>
 												{task.history.slice().reverse().map((entry, idx) => (
@@ -513,16 +644,70 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 		const renderClientTasks = useCallback(() => (
 			<>
 				<div className="dashboard-section">
-					<h2 className="dashboard-section-title">Submitted Requests</h2>
+					<div className="dashboard-section-header">
+						<h2 className="dashboard-section-title">All Tasks</h2>
+						<span className="info-badge">{clientAllTasks.length} total</span>
+					</div>
+					{clientAllTasks.length ? (
+						<div className="items-list">
+							{clientAllTasks.map((task, index) => (
+								<div key={task._id} className="item-card task-card">
+									<div className="task-card-head">
+										<div className="task-card-title">
+											<span className="task-index-badge">{formatIndex(index)}</span>
+											<span className="item-title">{task.title}</span>
+										</div>
+										<span className="status-badge">{task.status}</span>
+									</div>
+									<div className="task-meta-grid">
+										<div className="task-meta-item">
+											<span className="task-meta-label">Created</span>
+											<span className="task-meta-value">{formatDate(task.createdAt, true)}</span>
+										</div>
+										<div className="task-meta-item">
+											<span className="task-meta-label">Manager</span>
+											<span className="task-meta-value">{formatPerson(task.manager)}</span>
+										</div>
+									</div>
+									{renderChangeRequests(task)}
+									<details className="task-details" style={{ marginTop: 12 }}>
+										<summary>Attachments</summary>
+										{renderAttachmentList(task)}
+									</details>
+								</div>
+							))}
+						</div>
+					) : <div className="help">No tasks created yet.</div>}
+				</div>
+
+				<div className="dashboard-section">
+					<div className="dashboard-section-header">
+						<h2 className="dashboard-section-title">Submitted Requests</h2>
+						<span className="info-badge">{clientQueued.length} items</span>
+					</div>
 					{clientQueued.length ? (
 						<div className="items-list">
-							{clientQueued.map((task) => (
-								<div key={task._id} className="item-card">
-									<div className="item-title">{task.title}</div>
-									<div className="item-meta">Status: <span className="status-badge">{task.status}</span> — Requested {formatDate(task.createdAt, true)}</div>
-									<div className="item-meta">Manager: {formatPerson(task.manager)}</div>
+							{clientQueued.map((task, index) => (
+								<div key={task._id} className="item-card task-card">
+									<div className="task-card-head">
+										<div className="task-card-title">
+											<span className="task-index-badge">{formatIndex(index)}</span>
+											<span className="item-title">{task.title}</span>
+										</div>
+										<span className="status-badge">{task.status}</span>
+									</div>
+									<div className="task-meta-grid">
+										<div className="task-meta-item">
+											<span className="task-meta-label">Requested</span>
+											<span className="task-meta-value">{formatDate(task.createdAt, true)}</span>
+										</div>
+										<div className="task-meta-item">
+											<span className="task-meta-label">Manager</span>
+											<span className="task-meta-value">{formatPerson(task.manager)}</span>
+										</div>
+									</div>
 									{renderChangeRequests(task)}
-									<details style={{ marginTop: 12 }}>
+									<details className="task-details" style={{ marginTop: 12 }}>
 										<summary>Attachments</summary>
 										{renderAttachmentList(task)}
 									</details>
@@ -533,18 +718,32 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 				</div>
 
 				<div className="dashboard-section">
-					<h2 className="dashboard-section-title">In Delivery</h2>
+					<div className="dashboard-section-header">
+						<h2 className="dashboard-section-title">In Delivery</h2>
+						<span className="info-badge">{clientInDelivery.length} items</span>
+					</div>
 					{clientInDelivery.length ? (
 						<div className="items-list">
-							{clientInDelivery.map((task) => (
-								<div key={task._id} className="item-card">
-									<div className="item-title">{task.title}</div>
-									<div className="item-meta">Current status: <span className="status-badge">{task.status}</span> — Manager {formatPerson(task.manager)}</div>
-									<details style={{ marginTop: 12 }}>
+							{clientInDelivery.map((task, index) => (
+								<div key={task._id} className="item-card task-card">
+									<div className="task-card-head">
+										<div className="task-card-title">
+											<span className="task-index-badge">{formatIndex(index)}</span>
+											<span className="item-title">{task.title}</span>
+										</div>
+										<span className="status-badge">{task.status}</span>
+									</div>
+									<div className="task-meta-grid">
+										<div className="task-meta-item">
+											<span className="task-meta-label">Manager</span>
+											<span className="task-meta-value">{formatPerson(task.manager)}</span>
+										</div>
+									</div>
+									<details className="task-details" style={{ marginTop: 12 }}>
 										<summary>Stage progress</summary>
 										{renderStageSnapshot(task)}
 									</details>
-									<details style={{ marginTop: 12 }}>
+									<details className="task-details" style={{ marginTop: 12 }}>
 										<summary>Attachments</summary>
 										{renderAttachmentList(task)}
 									</details>
@@ -555,24 +754,42 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 				</div>
 
 				<div className="dashboard-section">
-					<h2 className="dashboard-section-title">Awaiting Your Review</h2>
+					<div className="dashboard-section-header">
+						<h2 className="dashboard-section-title">Awaiting Your Review</h2>
+						<span className="info-badge">{clientAwaitingReview.length} items</span>
+					</div>
 					{clientAwaitingReview.length ? (
 						<div className="items-list">
-							{clientAwaitingReview.map((task) => {
+							{clientAwaitingReview.map((task, index) => {
 								const isActing = actingTaskId === task._id
 								return (
-									<div key={task._id} className="item-card">
-										<div className="item-title">{task.title}</div>
-										<div className="item-meta">Delivered {formatDate(task.updatedAt || task.deadline, true)} — Manager {formatPerson(task.manager)}</div>
+									<div key={task._id} className="item-card task-card">
+										<div className="task-card-head">
+											<div className="task-card-title">
+												<span className="task-index-badge">{formatIndex(index)}</span>
+												<span className="item-title">{task.title}</span>
+											</div>
+											<span className="status-badge">Awaiting Review</span>
+										</div>
+										<div className="task-meta-grid">
+											<div className="task-meta-item">
+												<span className="task-meta-label">Delivered</span>
+												<span className="task-meta-value">{formatDate(task.updatedAt || task.deadline, true)}</span>
+											</div>
+											<div className="task-meta-item">
+												<span className="task-meta-label">Manager</span>
+												<span className="task-meta-value">{formatPerson(task.manager)}</span>
+											</div>
+										</div>
 										<div style={{ marginTop: 12, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
 											<button className="btn small" onClick={() => handleClientAction(task._id, 'approve')} disabled={isActing}>{isActing ? 'Processing...' : 'Approve'}</button>
 											<button className="btn btn-outline small" onClick={() => handleClientAction(task._id, 'request-changes')} disabled={isActing}>{isActing ? 'Processing...' : 'Request changes'}</button>
 										</div>
-										<details style={{ marginTop: 12 }}>
+										<details className="task-details" style={{ marginTop: 12 }}>
 											<summary>Stage progress</summary>
 											{renderStageSnapshot(task)}
 										</details>
-										<details style={{ marginTop: 12 }}>
+										<details className="task-details" style={{ marginTop: 12 }}>
 											<summary>Deliverables</summary>
 											{renderAttachmentList(task)}
 										</details>
@@ -585,7 +802,10 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 				</div>
 
 				<div className="dashboard-section">
-					<h2 className="dashboard-section-title">Completed Projects</h2>
+					<div className="dashboard-section-header">
+						<h2 className="dashboard-section-title">Completed Projects</h2>
+						<span className="info-badge">{clientCompleted.length} items</span>
+					</div>
 					{clientCompleted.length ? (
 						<div className="table-container">
 							<table className="data-table">
@@ -610,14 +830,22 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 					) : <div className="help">No completed projects yet.</div>}
 				</div>
 			</>
-		), [actingTaskId, clientAwaitingReview, clientCompleted, clientInDelivery, clientQueued, handleClientAction, renderAttachmentList, renderChangeRequests, renderStageSnapshot])
+		), [actingTaskId, clientAllTasks, clientAwaitingReview, clientCompleted, clientInDelivery, clientQueued, handleClientAction, renderAttachmentList, renderChangeRequests, renderStageSnapshot])
 
 		const renderRoleAssignments = useCallback(() => (
 			<>
-				{renderAssignmentSection('Queued Assignments', queuedAssignments)}
-				{renderAssignmentSection('Active Assignments', activeAssignments, { allowUpload: true })}
-				{renderAssignmentSection('Waiting For Manager Review', awaitingManagerReview)}
-				{renderAssignmentSection('Approved Deliveries', completedAssignments)}
+				{(queuedAssignments.length || activeAssignments.length || awaitingManagerReview.length || completedAssignments.length) ? (
+					<>
+						{renderAssignmentSection('Queued Assignments', queuedAssignments)}
+						{renderAssignmentSection('Active Assignments', activeAssignments, { allowUpload: true })}
+						{renderAssignmentSection('Waiting For Manager Review', awaitingManagerReview)}
+						{renderAssignmentSection('Approved Deliveries', completedAssignments)}
+					</>
+				) : (
+					<div className="dashboard-section">
+						<div className="help">No tasks available in My Tasks.</div>
+					</div>
+				)}
 			</>
 		), [activeAssignments, awaitingManagerReview, completedAssignments, queuedAssignments, renderAssignmentSection])
 
@@ -791,7 +1019,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 											<div style={{position: 'relative'}}>
 												<div style={{fontSize: '48px', marginBottom: '8px'}}>📋</div>
 												<div style={{fontSize: '36px', fontWeight: 800, color: '#fff', marginBottom: '4px'}}>
-													{taskList.length}
+													{taskStats.total}
 												</div>
 												<div style={{fontSize: '16px', color: 'rgba(255,255,255,0.9)', fontWeight: 600}}>Total Tasks</div>
 												<div style={{fontSize: '13px', color: 'rgba(255,255,255,0.7)', marginTop: '8px'}}>All assigned tasks</div>
@@ -813,7 +1041,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 											<div style={{position: 'relative'}}>
 												<div style={{fontSize: '48px', marginBottom: '8px'}}>⚡</div>
 												<div style={{fontSize: '36px', fontWeight: 800, color: '#fff', marginBottom: '4px'}}>
-													{taskList.filter(t => t.status !== STATUS.COMPLETED && t.status !== STATUS.AWAITING_CLIENT_REVIEW).length}
+													{taskStats.active}
 												</div>
 												<div style={{fontSize: '16px', color: 'rgba(255,255,255,0.9)', fontWeight: 600}}>Active</div>
 												<div style={{fontSize: '13px', color: 'rgba(255,255,255,0.7)', marginTop: '8px'}}>Currently in progress</div>
@@ -835,10 +1063,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 											<div style={{position: 'relative'}}>
 												<div style={{fontSize: '48px', marginBottom: '8px'}}>👁️</div>
 												<div style={{fontSize: '36px', fontWeight: 800, color: '#fff', marginBottom: '4px'}}>
-													{taskList.filter(t => {
-														const assignment = getAssignment(t)
-														return assignment && assignment.status === 'submitted'
-													}).length}
+													{taskStats.awaitingReview}
 												</div>
 												<div style={{fontSize: '16px', color: 'rgba(255,255,255,0.9)', fontWeight: 600}}>Awaiting Review</div>
 												<div style={{fontSize: '13px', color: 'rgba(255,255,255,0.7)', marginTop: '8px'}}>Submitted for review</div>
@@ -860,7 +1085,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 											<div style={{position: 'relative'}}>
 												<div style={{fontSize: '48px', marginBottom: '8px'}}>✅</div>
 												<div style={{fontSize: '36px', fontWeight: 800, color: '#fff', marginBottom: '4px'}}>
-													{taskList.filter(t => t.status === STATUS.COMPLETED).length}
+													{taskStats.completed}
 												</div>
 												<div style={{fontSize: '16px', color: 'rgba(255,255,255,0.9)', fontWeight: 600}}>Completed</div>
 												<div style={{fontSize: '13px', color: 'rgba(255,255,255,0.7)', marginTop: '8px'}}>Successfully finished</div>
@@ -883,40 +1108,28 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 										<div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', marginBottom: '24px'}}>
 											<div style={{padding: '20px', background: 'linear-gradient(135deg, #3b82f615, #2563eb15)', borderRadius: '12px', border: '2px solid #3b82f630', textAlign: 'center'}}>
 												<div style={{fontSize: '32px', fontWeight: 800, color: '#3b82f6', marginBottom: '4px'}}>
-													{taskList.filter(t => {
-														const assignment = getAssignment(t)
-														return assignment && assignment.status === 'in_progress'
-													}).length}
+													{taskStats.inProgress}
 												</div>
 												<div style={{fontSize: '13px', color: '#4b5563', fontWeight: 600}}>Working On</div>
 											</div>
 
 											<div style={{padding: '20px', background: 'linear-gradient(135deg, #8b5cf615, #667eea15)', borderRadius: '12px', border: '2px solid #8b5cf630', textAlign: 'center'}}>
 												<div style={{fontSize: '32px', fontWeight: 800, color: '#8b5cf6', marginBottom: '4px'}}>
-													{taskList.filter(t => {
-														const assignment = getAssignment(t)
-														return assignment && assignment.status === 'pending'
-													}).length}
+													{taskStats.pending}
 												</div>
 												<div style={{fontSize: '13px', color: '#4b5563', fontWeight: 600}}>Pending</div>
 											</div>
 
 											<div style={{padding: '20px', background: 'linear-gradient(135deg, #f59e0b15, #d9770615)', borderRadius: '12px', border: '2px solid #f59e0b30', textAlign: 'center'}}>
 												<div style={{fontSize: '32px', fontWeight: 800, color: '#f59e0b', marginBottom: '4px'}}>
-													{taskList.filter(t => {
-														const assignment = getAssignment(t)
-														return assignment && assignment.status === 'submitted'
-													}).length}
+													{taskStats.submitted}
 												</div>
 												<div style={{fontSize: '13px', color: '#4b5563', fontWeight: 600}}>Submitted</div>
 											</div>
 
 											<div style={{padding: '20px', background: 'linear-gradient(135deg, #22c55e15, #16a34a15)', borderRadius: '12px', border: '2px solid #22c55e30', textAlign: 'center'}}>
 												<div style={{fontSize: '32px', fontWeight: 800, color: '#22c55e', marginBottom: '4px'}}>
-													{taskList.filter(t => {
-														const assignment = getAssignment(t)
-														return assignment && assignment.status === 'approved'
-													}).length}
+													{taskStats.approved}
 												</div>
 												<div style={{fontSize: '13px', color: '#4b5563', fontWeight: 600}}>Approved</div>
 											</div>
@@ -927,13 +1140,13 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 											<div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '8px'}}>
 												<span style={{fontSize: '14px', fontWeight: 600, color: '#374151'}}>Task Completion Rate</span>
 												<span style={{fontSize: '14px', fontWeight: 700, color: '#667eea'}}>
-													{taskList.length > 0 ? Math.round((taskList.filter(t => t.status === STATUS.COMPLETED).length / taskList.length) * 100) : 0}%
+													{taskStats.completionRate}%
 												</span>
 											</div>
 											<div style={{height: '12px', background: '#e5e7eb', borderRadius: '12px', overflow: 'hidden'}}>
 												<div style={{
 													height: '100%',
-													width: `${taskList.length > 0 ? (taskList.filter(t => t.status === STATUS.COMPLETED).length / taskList.length) * 100 : 0}%`,
+													width: `${taskStats.completionPercent}%`,
 													background: 'linear-gradient(90deg, #22c55e 0%, #16a34a 100%)',
 													borderRadius: '12px',
 													transition: 'width 0.6s ease',
@@ -955,7 +1168,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 												🎯 Recent Tasks
 											</h3>
 											<div style={{display: 'grid', gap: '12px'}}>
-												{taskList.slice(0, 5).map(task => {
+												{taskStats.recentTasks.map(task => {
 													const assignment = getAssignment(task)
 													const statusColor = assignment?.status === 'approved' ? '#22c55e' : 
 														assignment?.status === 'submitted' ? '#f59e0b' : 
@@ -1094,7 +1307,8 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 																fontSize: 13,
 																color: '#64748b'
 															}}>
-																<strong>Deadline:</strong> {formatDate(task.deadline)}
+																<strong>Deadline:</strong> {formatDate(task.deadline)}{' '}
+																<span style={getRemainingStyle(task.deadline)}>({formatRemainingDays(task.deadline)})</span>
 															</div>
 														)}
 													</div>
@@ -1116,10 +1330,11 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 								<div className="dashboard-section-header">
 									<h3 className="dashboard-section-title">My Profile</h3>
 								</div>
-								<div style={{maxWidth: 720, margin: '0 auto'}}>
+								<div className="profile-full-width">
 									<ProfileSettings
 										kind="user"
 										view="profile"
+										className="profile-dashboard-glass"
 										profile={profile}
 										onProfileUpdated={async () => {
 											await refresh()
@@ -1135,10 +1350,11 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 								<div className="dashboard-section-header">
 									<h3 className="dashboard-section-title">Settings</h3>
 								</div>
-								<div style={{maxWidth: 720, margin: '0 auto'}}>
+								<div className="profile-full-width">
 									<ProfileSettings
 										kind="user"
 										view="settings"
+										className="profile-dashboard-glass"
 										profile={profile}
 										onProfileUpdated={async () => {
 											await refresh()

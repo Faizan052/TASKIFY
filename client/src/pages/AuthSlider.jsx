@@ -109,11 +109,24 @@ export default function AuthSlider() {
   const [loginError, setLoginError] = useState(null)
   const [registerError, setRegisterError] = useState(null)
   const [showForgotPassword, setShowForgotPassword] = useState(false)
+  const MESSAGE_TIMEOUT_MS = 4500
 
   // Sync mode with URL path
   useEffect(() => {
     setMode(initialMode)
   }, [initialMode])
+
+  useEffect(() => {
+    if (!loginError) return
+    const timer = setTimeout(() => setLoginError(null), MESSAGE_TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [loginError])
+
+  useEffect(() => {
+    if (!registerError) return
+    const timer = setTimeout(() => setRegisterError(null), MESSAGE_TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [registerError])
 
   // Cleanup navigation timer on unmount
   useEffect(() => {
@@ -319,8 +332,11 @@ export default function AuthSlider() {
           }
         })
 
-        // Redirect to login after successful registration
-        nav('/user/login')
+        const loginData = await apiFetch('/api/user/login', {
+          method: 'POST',
+          body: { email: regEmail.trim(), password: regPassword }
+        })
+        completeLogin(loginData, loginData.role)
       } catch (err) {
         setRegisterError(err.message || 'Registration failed. Please check your OTP.')
       } finally {

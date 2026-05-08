@@ -51,6 +51,7 @@ export default function HRDashboard(){
 	const [progressFilter, setProgressFilter] = useState({ teamId: '', userId: '' })
 	const [progressDetail, setProgressDetail] = useState(null)
 	const [loadingProgressDetail, setLoadingProgressDetail] = useState(false)
+	const refreshInFlight = useRef(false)
 
 	const teamsByManager = useMemo(() => {
 		if (!overview) return {}
@@ -75,6 +76,21 @@ export default function HRDashboard(){
 	const awaitingHrReview = useMemo(() => tasks.filter(task => task.status === 'Awaiting HR Review'), [tasks])
 	const awaitingClientReview = useMemo(() => tasks.filter(task => task.status === 'Awaiting Client Review'), [tasks])
 	const completedTasks = useMemo(() => tasks.filter(task => task.status === 'Completed'), [tasks])
+	const teamTaskStats = useMemo(() => {
+		const map = {}
+		for (const task of tasks) {
+			const teamId = task.assignedTeam?._id
+			if (!teamId) continue
+			if (!map[teamId]) {
+				map[teamId] = { total: 0, completed: 0 }
+			}
+			map[teamId].total += 1
+			if (task.status === 'Completed') {
+				map[teamId].completed += 1
+			}
+		}
+		return map
+	}, [tasks])
 
 	const managerStatusMap = useMemo(() => {
 		const map = {}
@@ -133,6 +149,8 @@ export default function HRDashboard(){
 	}
 
 	const loadDashboard = useCallback(async (withSpinner = false) => {
+		if (refreshInFlight.current) return
+		refreshInFlight.current = true
 		if (withSpinner) setLoading(true)
 		setError(null)
 		try{
@@ -147,7 +165,10 @@ export default function HRDashboard(){
 			setTasks(taskData)
 			setPerformanceReport(reportData)
 		}catch(err){ setError(err.message) }
-		finally{ if (withSpinner) setLoading(false) }
+		finally{ 
+			if (withSpinner) setLoading(false)
+			refreshInFlight.current = false
+		}
 	},[])
 
 	useEffect(()=>{ loadDashboard(true) },[loadDashboard])
@@ -165,9 +186,23 @@ export default function HRDashboard(){
 	}, [error])
 
 	useEffect(()=>{
-		const id = setInterval(()=>{ loadDashboard() }, AUTO_REFRESH_INTERVAL)
+		const id = setInterval(()=>{ 
+			if (typeof document !== 'undefined' && document.hidden) return
+			loadDashboard() 
+		}, AUTO_REFRESH_INTERVAL)
 		return ()=>clearInterval(id)
 	},[loadDashboard])
+
+	useEffect(() => {
+		if (typeof document === 'undefined') return
+		const onVisibilityChange = () => {
+			if (!document.hidden) {
+				loadDashboard()
+			}
+		}
+		document.addEventListener('visibilitychange', onVisibilityChange)
+		return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+	}, [loadDashboard])
 
 	const logout = () => {
 		clearSession()
@@ -982,9 +1017,9 @@ export default function HRDashboard(){
 										{overview.teams && overview.teams.length > 0 ? (
 											<div style={{display: 'grid', gap: 16}}>
 												{overview.teams.map(team => {
-													const teamTasks = tasks.filter(t => t.assignedTeam && t.assignedTeam._id === team._id)
-													const completedCount = teamTasks.filter(t => t.status === 'Completed').length
-													const progressPercent = teamTasks.length > 0 ? Math.round((completedCount / teamTasks.length) * 100) : 0
+													const stats = teamTaskStats[team._id] || { total: 0, completed: 0 }
+													const completedCount = stats.completed
+													const progressPercent = stats.total > 0 ? Math.round((completedCount / stats.total) * 100) : 0
 													
 													return (
 														<div key={team._id} className="item-card">
@@ -1010,7 +1045,7 @@ export default function HRDashboard(){
 															{/* Progress Bar */}
 															<div style={{marginBottom: 12}}>
 																<div style={{display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#64748b', marginBottom: 4}}>
-																	<span>{completedCount} / {teamTasks.length} tasks completed</span>
+																	<span>{completedCount} / {stats.total} tasks completed</span>
 																</div>
 																<div style={{height: 8, background: '#e2e8f0', borderRadius: 8, overflow: 'hidden'}}>
 																	<div style={{
@@ -1228,10 +1263,11 @@ export default function HRDashboard(){
 										<div className="dashboard-section-header">
 											<h3 className="dashboard-section-title">My Profile</h3>
 										</div>
-										<div style={{maxWidth: 720, margin: '0 auto'}}>
+										<div className="profile-full-width">
 											<ProfileSettings
 												kind="user"
 												view="profile"
+												className="profile-dashboard-glass"
 												profile={profile}
 												passwordDisabledMessage="You can't update your password here. Please contact the Admin who created your account to update your password."
 												onProfileUpdated={(updated) => {
@@ -1249,10 +1285,11 @@ export default function HRDashboard(){
 										<div className="dashboard-section-header">
 											<h3 className="dashboard-section-title">Settings</h3>
 										</div>
-										<div style={{maxWidth: 720, margin: '0 auto'}}>
+										<div className="profile-full-width">
 											<ProfileSettings
 												kind="user"
 												view="settings"
+												className="profile-dashboard-glass"
 												profile={profile}
 												passwordDisabledMessage="You can't update your password here. Please contact the Admin who created your account to update your password."
 												onProfileUpdated={(updated) => {

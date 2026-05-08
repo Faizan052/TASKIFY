@@ -314,6 +314,23 @@ const applyProjectScaleAdjustment = ({ estimatedHours, category = 'other', proje
     return roundTo(adjustedHours, 2);
 };
 
+const applyUncertaintyBuffer = ({ estimatedHours, confidence, requirementQuality }) => {
+    const confidenceFactor = confidence === 'low'
+        ? 1.25
+        : confidence === 'medium'
+            ? 1.1
+            : 1;
+
+    const qualityFactor = requirementQuality === 'low'
+        ? 1.2
+        : requirementQuality === 'medium'
+            ? 1.08
+            : 1;
+
+    const factor = Math.max(confidenceFactor, qualityFactor);
+    return roundTo(estimatedHours * factor, 2);
+};
+
 const estimateScopeItems = ({ title, description, documentRequirements = null }) => {
     const body = `${toSafeString(title)} ${toSafeString(description)}`;
     const listSplitCount = body
@@ -635,7 +652,19 @@ const analyzeRequestFeasibility = async ({ deadline, category, title, descriptio
         projectScope
     });
 
-    const estimatedDays = roundTo(estimatedHours / WORKING_HOURS_PER_DAY, 2);
+    const confidence = (safeDescription.length >= 180 || file) && requirementQuality.qualityLevel !== 'low'
+        ? 'high'
+        : safeDescription.length >= 100
+            ? 'medium'
+            : 'low';
+
+    estimatedHours = applyUncertaintyBuffer({
+        estimatedHours,
+        confidence,
+        requirementQuality: requirementQuality.qualityLevel
+    });
+
+    const estimatedDays = Math.max(1, Math.ceil(estimatedHours / WORKING_HOURS_PER_DAY));
 
     const availableHours = Math.max(0, daysUntilDeadline) * WORKING_HOURS_PER_DAY;
     const feasible = availableHours >= estimatedHours;
@@ -647,8 +676,8 @@ const analyzeRequestFeasibility = async ({ deadline, category, title, descriptio
 
     if (!feasible) {
         const extraHours = Math.max(1, roundTo(estimatedHours - availableHours, 1));
-        const extraDays = roundTo(extraHours / WORKING_HOURS_PER_DAY, 1);
-        recommendations.push(`Adjust deadline by at least ${extraDays} day(s) (${extraHours} hour(s)).`);
+        const extraDays = Math.max(1, Math.ceil(extraHours / WORKING_HOURS_PER_DAY));
+        recommendations.push(`Adjust deadline by at least ${extraDays} day(s).`);
         recommendations.push('Reduce deliverable scope and split work into phased milestones.');
     } else {
         recommendations.push('Lock scope early to prevent delivery drift.');
@@ -681,15 +710,7 @@ const analyzeRequestFeasibility = async ({ deadline, category, title, descriptio
         ? (scheduleGapHours <= -24 ? 'high' : 'medium')
         : (scheduleGapHours <= 8 ? 'medium' : 'low');
 
-    const confidence = (safeDescription.length >= 180 || file) && requirementQuality.qualityLevel !== 'low'
-        ? 'high'
-        : safeDescription.length >= 100
-            ? 'medium'
-            : 'low';
-
-    const effortLabel = estimatedHours < WORKING_HOURS_PER_DAY
-        ? `${estimatedHours} hour(s)`
-        : `${estimatedDays} day(s)`;
+    const effortLabel = `${estimatedDays} day(s)`;
 
     return {
         feasible,

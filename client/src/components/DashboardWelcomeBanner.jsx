@@ -68,7 +68,7 @@ export default function DashboardWelcomeBanner({ name, role }) {
   const [messageIndex, setMessageIndex] = useState(0)
 
   useEffect(() => {
-    const clockId = setInterval(() => setNow(new Date()), 1000)
+    const clockId = setInterval(() => setNow(new Date()), 30000)
     return () => clearInterval(clockId)
   }, [])
 
@@ -84,8 +84,7 @@ export default function DashboardWelcomeBanner({ name, role }) {
   const currentMessage = messages[messageIndex] || messages[0]
   const digitalTime = now.toLocaleTimeString([], {
     hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
+    minute: '2-digit'
   })
   const period = now.toLocaleTimeString([], { hour: '2-digit', hour12: true }).slice(-2)
   const dateLabel = now.toLocaleDateString([], {

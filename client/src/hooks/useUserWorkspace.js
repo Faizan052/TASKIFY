@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../api'
 
 const AUTO_REFRESH_INTERVAL = 30000
@@ -8,6 +8,7 @@ export const useUserWorkspace = () => {
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const hasLoadedRef = useRef(false)
 
   const loadProfile = useCallback(async () => {
     const data = await apiFetch('/api/user/profile')
@@ -21,11 +22,14 @@ export const useUserWorkspace = () => {
     return data
   }, [])
 
-  const refresh = useCallback(async () => {
-    setLoading(true)
+  const refresh = useCallback(async ({ silent = false } = {}) => {
+    if (!silent || !hasLoadedRef.current) {
+      setLoading(true)
+    }
     setError(null)
     try {
       await Promise.all([loadProfile(), loadTasks()])
+      hasLoadedRef.current = true
     } catch (err) {
       setError(err.message)
     } finally {
@@ -39,12 +43,11 @@ export const useUserWorkspace = () => {
 
   useEffect(() => {
     const id = setInterval(() => {
-      Promise.all([loadProfile(), loadTasks()]).catch(err => {
-        setError(err.message)
-      })
+      if (typeof document !== 'undefined' && document.hidden) return
+      refresh({ silent: true })
     }, AUTO_REFRESH_INTERVAL)
     return () => clearInterval(id)
-  }, [loadProfile, loadTasks])
+  }, [refresh])
 
   return {
     profile,

@@ -1,4 +1,4 @@
-const { sendWelcomeEmail, sendNewPasswordEmail } = require('./emailService');
+const { sendWelcomeEmail, sendNewPasswordEmail, sendTaskStageEmail } = require('./emailService');
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -24,7 +24,16 @@ const trySendNewPasswordEmail = async ({ email, name, password, role, errorMessa
     }
 };
 
+const trySendTaskStageEmail = async ({ email, name, roleLabel, taskTitle, message, errorMessage }) => {
+    try {
+        await sendTaskStageEmail({ email, userName: name, roleLabel, taskTitle, message });
+    } catch (error) {
+        logFailure(errorMessage || 'Failed to send task stage email:', error);
+    }
+};
+
 module.exports = {
     trySendWelcomeEmail,
-    trySendNewPasswordEmail
+    trySendNewPasswordEmail,
+    trySendTaskStageEmail
 };

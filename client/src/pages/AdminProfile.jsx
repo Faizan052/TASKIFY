@@ -33,13 +33,17 @@ export default function AdminProfile(){
 	const displayName = profile && profile.username ? profile.username : 'Admin'
 
 	return (
-		<main className="page">
-			<header style={{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8, marginBottom:12}}>
-				<div>
-					<h1 style={{margin:0}}>Profile</h1>
-					<p style={{margin:'6px 0 0 0'}}>Welcome {displayName} ({roleLabel})</p>
+		<main className="page profile-page">
+			<header className="profile-page-header">
+				<div className="profile-page-title">
+					<h1>Profile</h1>
+					<div className="profile-page-sub">
+						<span>{displayName}</span>
+						<span className="profile-page-role">{roleLabel}</span>
+					</div>
+					<p>Manage your account details and preferences.</p>
 				</div>
-				<div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+				<div className="profile-page-actions">
 					<button className="btn btn-outline" onClick={goBack}>Back to dashboard</button>
 					<button className="btn" onClick={logout}>Sign out</button>
 				</div>

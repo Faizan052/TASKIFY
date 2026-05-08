@@ -65,7 +65,7 @@ const upload = multer({
     fileFilter,
     limits: {
         // Accept larger archives (e.g. multi-stage RAR uploads)
-        fileSize: 100 * 1024 * 1024
+        fileSize: 500 * 1024 * 1024
     }
 });
 

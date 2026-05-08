@@ -228,37 +228,34 @@ export default function ProfileSettings({
   }
 
   return (
-    <section className={`profile-shell ${className}`.trim()}>
+    <section className={`profile-shell profile-shell-glass ${className}`.trim()}>
       {message && <div className="notice notice-success">{message}</div>}
       {error && <div className="notice notice-error">{error}</div>}
 
       {(view === 'profile' || view === 'both') && (
-        <div className="profile-screen">
-          <div className="profile-banner" aria-hidden />
-
-          <div className="profile-hero">
-            <div className="profile-hero-avatar" aria-hidden>
-              {photoUrl ? (
-                <img src={photoUrl} alt="Profile" />
-              ) : (
-                <span>{buildAvatarFallback(displayName || email)}</span>
-              )}
-            </div>
-
-            <div className="profile-hero-meta">
-              <div className="profile-hero-row">
-                <h2 className="profile-hero-name">{displayName}</h2>
-                <span className="profile-role-pill">{roleLabel || '—'}</span>
+        <div className="profile-screen glass-surface">
+          <div className="profile-banner">
+            <div className="profile-banner-content">
+              <div className="profile-banner-left">
+                <div className="profile-banner-avatar">
+                  {photoUrl ? (
+                    <img src={photoUrl} alt="Profile" />
+                  ) : (
+                    <span>{buildAvatarFallback(displayName || email)}</span>
+                  )}
+                </div>
+                <div className="profile-banner-meta">
+                  <div className="profile-banner-name">{displayName || '—'}</div>
+                </div>
               </div>
-              <div className="profile-hero-sub">
-                <span className="profile-hero-email">{email || '—'}</span>
-                {joinedLabel ? <span className="profile-hero-joined">Member since {joinedLabel}</span> : null}
+              <div className="profile-banner-right">
+                <div className="profile-banner-role">{roleLabel || '—'}</div>
               </div>
             </div>
           </div>
 
           <div className="profile-panels">
-            <div className="profile-panel">
+            <div className="profile-panel glass-panel">
               <h3 className="profile-panel-title">Profile</h3>
               <div className="profile-fields">
                 <div className="profile-field"><span className="k">{primaryNameLabel}</span><span className="v">{displayName || '—'}</span></div>
@@ -267,7 +264,7 @@ export default function ProfileSettings({
               </div>
             </div>
 
-            <div className="profile-panel">
+            <div className="profile-panel glass-panel">
               <h3 className="profile-panel-title">Contact</h3>
               <div className="profile-fields">
                 <div className="profile-field"><span className="k">Phone</span><span className="v">{profile.phone || '—'}</span></div>
@@ -280,8 +277,22 @@ export default function ProfileSettings({
       )}
 
       {(view === 'settings' || view === 'both') && (
-        <div className="settings-card">
+        <div className="settings-card glass-surface">
           <h3 className="settings-title">Settings</h3>
+          <div className="settings-hero">
+            <div className="settings-hero-avatar">
+              {photoUrl ? (
+                <img src={photoUrl} alt="Profile" />
+              ) : (
+                <span>{buildAvatarFallback(displayName || email)}</span>
+              )}
+            </div>
+            <div className="settings-hero-meta">
+              <div className="settings-hero-name">{displayName || '—'}</div>
+              <div className="settings-hero-role">{roleLabel || '—'}</div>
+              <div className="settings-hero-email">{email || '—'}</div>
+            </div>
+          </div>
           <div className="settings-actions">
             <button className="btn" onClick={openEdit}>Edit Profile</button>
             <button className="btn btn-outline" onClick={openCredentials}>Update Login Credentials</button>
@@ -299,7 +310,7 @@ export default function ProfileSettings({
           </div>
 
           {mode === 'edit' && (
-            <form className="settings-panel" onSubmit={saveBasic}>
+            <form className="settings-panel glass-inset" onSubmit={saveBasic}>
               <h4 className="settings-panel-title">Edit Profile</h4>
               <div className="grid">
                 <label>
@@ -364,7 +375,7 @@ export default function ProfileSettings({
           )}
 
           {mode === 'credentials' && (
-            <div className="settings-panel">
+            <div className="settings-panel glass-inset">
               <h4 className="settings-panel-title">Update Login Credentials</h4>
 
               {!canUpdatePassword ? (

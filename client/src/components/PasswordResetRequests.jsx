@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Input from '../components/Input';
@@ -11,9 +11,16 @@ export default function PasswordResetRequests({ userRole }) {
     const [selectedRequest, setSelectedRequest] = useState(null);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const inFlightRef = useRef(false);
+    const hasLoadedRef = useRef(false);
 
-    const fetchRequests = useCallback(async () => {
-        setLoading(true);
+    const fetchRequests = useCallback(async ({ silent = false } = {}) => {
+        if (inFlightRef.current) return;
+        if (typeof document !== 'undefined' && document.hidden) return;
+        inFlightRef.current = true;
+        if (!silent || !hasLoadedRef.current) {
+            setLoading(true);
+        }
         setError('');
         
         try {
@@ -33,20 +40,42 @@ export default function PasswordResetRequests({ userRole }) {
             }
 
             const data = await response.json();
-            setRequests(data);
+            setRequests((prev) => {
+                if (!Array.isArray(prev) || prev.length === 0) return data;
+                if (!Array.isArray(data)) return prev;
+                if (prev.length !== data.length) return data;
+                const prevFirst = prev[0]?._id;
+                const prevLast = prev[prev.length - 1]?._id;
+                const nextFirst = data[0]?._id;
+                const nextLast = data[data.length - 1]?._id;
+                return prevFirst === nextFirst && prevLast === nextLast ? prev : data;
+            });
         } catch (err) {
             setError(err.message);
         } finally {
-            setLoading(false);
+            if (!silent || !hasLoadedRef.current) {
+                setLoading(false);
+            }
+            hasLoadedRef.current = true;
+            inFlightRef.current = false;
         }
     }, [userRole]);
 
     useEffect(() => {
-        fetchRequests();
+        fetchRequests({ silent: false });
         
         // Auto-refresh every 30 seconds
-        const interval = setInterval(fetchRequests, 30000);
-        return () => clearInterval(interval);
+        const interval = setInterval(() => fetchRequests({ silent: true }), 30000);
+        const onVisibilityChange = () => {
+            if (!document.hidden) {
+                fetchRequests({ silent: true });
+            }
+        };
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+        };
     }, [fetchRequests]);
 
     const handleResetPassword = async (requestId) => {
@@ -85,7 +114,7 @@ export default function PasswordResetRequests({ userRole }) {
             setNewPassword('');
             
             // Refresh the list
-            fetchRequests();
+            fetchRequests({ silent: true });
         } catch (err) {
             setError(err.message);
         } finally {

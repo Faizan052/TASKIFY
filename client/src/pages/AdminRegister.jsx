@@ -29,6 +29,7 @@ export default function AdminRegister() {
   const [adminExists, setAdminExists] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
+  const MESSAGE_TIMEOUT_MS = 4500
 
   const [touched, setTouched] = useState({
     name: false,
@@ -42,6 +43,18 @@ export default function AdminRegister() {
   useEffect(() => {
     checkAdminExists()
   }, [])
+
+  useEffect(() => {
+    if (!error) return
+    const timer = setTimeout(() => setError(null), MESSAGE_TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [error])
+
+  useEffect(() => {
+    if (!success) return
+    const timer = setTimeout(() => setSuccess(null), MESSAGE_TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [success])
 
   const checkAdminExists = async () => {
     try {

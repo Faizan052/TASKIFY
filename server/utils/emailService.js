@@ -451,11 +451,80 @@ const sendNewPasswordEmail = async (email, userName, newPassword, role) => {
     }
 };
 
+const sendTaskStageEmail = async ({ email, userName = 'Team member', roleLabel = 'Team', taskTitle, message }) => {
+    const transporter = createTransporter();
+
+    if (!transporter) {
+        logDev(`📧 TASK STAGE EMAIL (Dev): ${email} - ${taskTitle} - ${message}`);
+        return { success: true };
+    }
+
+    const safeTaskTitle = taskTitle || 'your task';
+    const safeMessage = message || 'Task status has been updated.';
+
+    const mailOptions = {
+        from: `"TASKIFY" <${process.env.SMTP_USER}>`,
+        to: email,
+        subject: `TASKIFY - Update for ${safeTaskTitle}`,
+        html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                    .header { background: linear-gradient(135deg, #0ea5e9 0%, #0f766e 100%); color: white; padding: 28px; text-align: center; border-radius: 10px 10px 0 0; }
+                    .content { background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; }
+                    .card { background: white; border-radius: 10px; padding: 20px; margin: 20px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+                    .tag { display: inline-block; padding: 6px 12px; border-radius: 999px; background: #e0f2fe; color: #0369a1; font-size: 12px; font-weight: bold; letter-spacing: 0.5px; }
+                    .footer { text-align: center; margin-top: 20px; color: #6b7280; font-size: 14px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1 style="margin: 0;">TASKIFY</h1>
+                        <p style="margin: 8px 0 0 0;">Workflow Update</p>
+                    </div>
+                    <div class="content">
+                        <p>Hello ${userName} (${roleLabel}),</p>
+                        <div class="card">
+                            <div class="tag">Task Update</div>
+                            <h2 style="margin: 12px 0 6px 0;">${safeTaskTitle}</h2>
+                            <p style="margin: 0;">${safeMessage}</p>
+                        </div>
+                        <p>Please log in to TASKIFY to view details and next steps.</p>
+                        <div style="text-align: center; margin: 24px 0;">
+                            <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}" style="display: inline-block; padding: 10px 22px; background: #0ea5e9; color: white; text-decoration: none; border-radius: 8px;">Open Dashboard</a>
+                        </div>
+                        <div class="footer">
+                            <p>Best regards,<br><strong>TASKIFY Team</strong></p>
+                            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+                            <p style="font-size: 12px;">This is an automated email. Please do not reply to this message.</p>
+                        </div>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `
+    };
+
+    try {
+        const info = await transporter.sendMail(mailOptions);
+        logDev(`✅ Task stage email sent to ${email}`);
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        console.error('❌ Error sending task stage email:', error);
+        return { success: false };
+    }
+};
+
 module.exports = {
     generateOTP,
     sendOTPEmail,
     sendWelcomeEmail,
     sendPasswordResetOTP,
     sendPasswordChangedEmail,
-    sendNewPasswordEmail
+    sendNewPasswordEmail,
+    sendTaskStageEmail
 };

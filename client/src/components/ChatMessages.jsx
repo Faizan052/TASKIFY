@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useRef } from 'react'
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { apiFetch } from '../api'
 
 const AUTO_REFRESH_INTERVAL = 5000 // 5 seconds for chat
@@ -74,6 +74,10 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
     const [error, setError] = useState(null)
     const [unreadCount, setUnreadCount] = useState(0)
     const messagesEndRef = useRef(null)
+    const messagesContainerRef = useRef(null)
+    const messagesRef = useRef([])
+    const inFlightRef = useRef({ contacts: false, conversations: false, unread: false, messages: false })
+    const autoScrollRef = useRef(true)
     const [searchTerm, setSearchTerm] = useState('')
     const [showEmojiPicker, setShowEmojiPicker] = useState(false)
 
@@ -89,7 +93,20 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
 
+    const handleMessagesScroll = () => {
+        const container = messagesContainerRef.current
+        if (!container) return
+        const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+        autoScrollRef.current = distanceToBottom < 120
+    }
+
+    useEffect(() => {
+        messagesRef.current = messages
+    }, [messages])
+
     const loadContacts = useCallback(async () => {
+        if (inFlightRef.current.contacts) return
+        inFlightRef.current.contacts = true
         try {
             const data = await apiFetch('/api/messages/contacts')
             setContacts(data || [])
@@ -97,10 +114,14 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
         } catch (err) {
             console.error('Error loading contacts:', err)
             setError(err.message || 'Failed to load contacts')
+        } finally {
+            inFlightRef.current.contacts = false
         }
     }, [])
 
     const loadConversations = useCallback(async () => {
+        if (inFlightRef.current.conversations) return
+        inFlightRef.current.conversations = true
         try {
             const data = await apiFetch('/api/messages/conversations')
             setConversations(data || [])
@@ -108,32 +129,55 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
         } catch (err) {
             console.error('Error loading conversations:', err)
             setError(err.message || 'Failed to load conversations')
+        } finally {
+            inFlightRef.current.conversations = false
         }
     }, [])
 
     const loadUnreadCount = useCallback(async () => {
+        if (inFlightRef.current.unread) return
+        inFlightRef.current.unread = true
         try {
             const data = await apiFetch('/api/messages/unread-count')
-            setUnreadCount(data.count || 0)
+            const nextCount = data.count || 0
+            setUnreadCount((prev) => (prev === nextCount ? prev : nextCount))
         } catch (err) {
             // Silent fail for unread count
+        } finally {
+            inFlightRef.current.unread = false
         }
     }, [])
 
     const loadMessages = useCallback(async (contactId, { forceScroll = false } = {}) => {
         if (!contactId) return
+        if (inFlightRef.current.messages) return
+        inFlightRef.current.messages = true
         try {
             const shouldKeepBottom = forceScroll
             const data = await apiFetch(`/api/messages/conversation/${contactId}`)
-            setMessages(data || [])
-            // Mark as read
-            await apiFetch(`/api/messages/read/${contactId}`, { method: 'PUT' })
-            loadUnreadCount()
-            if (shouldKeepBottom) {
+            const nextMessages = data || []
+            const prevMessages = messagesRef.current || []
+            const changed =
+                prevMessages.length !== nextMessages.length ||
+                prevMessages[prevMessages.length - 1]?._id !== nextMessages[nextMessages.length - 1]?._id
+            setMessages((prev) => {
+                if (!prev || prev.length === 0) return nextMessages
+                if (prev.length !== nextMessages.length) return nextMessages
+                const prevLast = prev[prev.length - 1]?._id
+                const nextLast = nextMessages[nextMessages.length - 1]?._id
+                return prevLast === nextLast ? prev : nextMessages
+            })
+            if (changed || forceScroll) {
+                await apiFetch(`/api/messages/read/${contactId}`, { method: 'PUT' })
+                loadUnreadCount()
+            }
+            if (shouldKeepBottom || autoScrollRef.current) {
                 setTimeout(scrollToBottom, 100)
             }
         } catch (err) {
             setError(err.message)
+        } finally {
+            inFlightRef.current.messages = false
         }
     }, [loadUnreadCount])
 
@@ -150,6 +194,7 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
         if (selectedContact) {
             loadMessages(selectedContact._id, { forceScroll: true })
             const interval = setInterval(() => {
+                if (typeof document !== 'undefined' && document.hidden) return
                 loadMessages(selectedContact._id)
             }, AUTO_REFRESH_INTERVAL)
             return () => clearInterval(interval)
@@ -158,11 +203,28 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
 
     useEffect(() => {
         const interval = setInterval(() => {
+            if (typeof document !== 'undefined' && document.hidden) return
             loadConversations()
             loadUnreadCount()
         }, AUTO_REFRESH_INTERVAL)
         return () => clearInterval(interval)
     }, [loadConversations, loadUnreadCount])
+
+    useEffect(() => {
+        if (typeof document === 'undefined') return
+
+        const onVisibilityChange = () => {
+            if (document.hidden) return
+            loadConversations()
+            loadUnreadCount()
+            if (selectedContact?._id) {
+                loadMessages(selectedContact._id)
+            }
+        }
+
+        document.addEventListener('visibilitychange', onVisibilityChange)
+        return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+    }, [loadConversations, loadMessages, loadUnreadCount, selectedContact])
 
     useEffect(() => {
         if (onUnreadCountChange) {
@@ -247,56 +309,61 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
         return `Online ${days} day${days === 1 ? '' : 's'} ago`
     }
 
-    const normalizedSearch = searchTerm.toLowerCase()
+    const normalizedSearch = useMemo(() => searchTerm.toLowerCase(), [searchTerm])
 
-    const filteredConversations = conversations.filter((conv) => {
-        const userName = (conv?.user?.name || '').toLowerCase()
-        const userRole = (conv?.user?.role || '').toLowerCase()
-        return userName.includes(normalizedSearch) || userRole.includes(normalizedSearch)
-    })
-
-    const filteredContacts = contacts.filter((contact) => {
-        const contactName = (contact?.name || '').toLowerCase()
-        const contactRole = (contact?.role || '').toLowerCase()
-        return contactName.includes(normalizedSearch) || contactRole.includes(normalizedSearch)
-    })
-
-    // Merge conversations and contacts - prioritize people with existing conversations
-    const allPeople = []
-    const seenIds = new Set()
-    
-    // Add people with conversations first
-    filteredConversations.forEach((conv) => {
-        if (!conv?.user?._id) return
-        const conversationUserId = conv.user._id.toString()
-        seenIds.add(conversationUserId)
-        allPeople.push({
-            ...conv.user,
-            _id: conversationUserId,
-            name: conv.user.name || 'Unknown User',
-            role: conv.user.role || 'user',
-            lastMessage: conv.lastMessage,
-            lastMessageAt: conv.lastMessageAt,
-            unreadCount: conv.unreadCount,
-            hasConversation: true
+    const filteredConversations = useMemo(() => {
+        return conversations.filter((conv) => {
+            const userName = (conv?.user?.name || '').toLowerCase()
+            const userRole = (conv?.user?.role || '').toLowerCase()
+            return userName.includes(normalizedSearch) || userRole.includes(normalizedSearch)
         })
-    })
-    
-    // Add other contacts
-    filteredContacts.forEach((contact) => {
-        if (!contact?._id) return
-        const contactId = contact._id.toString()
-        if (!seenIds.has(contactId)) {
-            allPeople.push({
-                ...contact,
-                _id: contactId,
-                name: contact.name || 'Unknown User',
-                role: contact.role || 'user',
-                hasConversation: false,
-                unreadCount: 0
+    }, [conversations, normalizedSearch])
+
+    const filteredContacts = useMemo(() => {
+        return contacts.filter((contact) => {
+            const contactName = (contact?.name || '').toLowerCase()
+            const contactRole = (contact?.role || '').toLowerCase()
+            return contactName.includes(normalizedSearch) || contactRole.includes(normalizedSearch)
+        })
+    }, [contacts, normalizedSearch])
+
+    const allPeople = useMemo(() => {
+        const merged = []
+        const seenIds = new Set()
+
+        filteredConversations.forEach((conv) => {
+            if (!conv?.user?._id) return
+            const conversationUserId = conv.user._id.toString()
+            seenIds.add(conversationUserId)
+            merged.push({
+                ...conv.user,
+                _id: conversationUserId,
+                name: conv.user.name || 'Unknown User',
+                role: conv.user.role || 'user',
+                lastMessage: conv.lastMessage,
+                lastMessageAt: conv.lastMessageAt,
+                unreadCount: conv.unreadCount,
+                hasConversation: true
             })
-        }
-    })
+        })
+
+        filteredContacts.forEach((contact) => {
+            if (!contact?._id) return
+            const contactId = contact._id.toString()
+            if (!seenIds.has(contactId)) {
+                merged.push({
+                    ...contact,
+                    _id: contactId,
+                    name: contact.name || 'Unknown User',
+                    role: contact.role || 'user',
+                    hasConversation: false,
+                    unreadCount: 0
+                })
+            }
+        })
+
+        return merged
+    }, [filteredConversations, filteredContacts])
 
     if (loading) {
         return (
@@ -709,7 +776,10 @@ export default function ChatMessages({ onClose: _onClose, onUnreadCountChange })
                     </div>
 
                     {/* Messages */}
-                    <div style={{
+                    <div
+                        ref={messagesContainerRef}
+                        onScroll={handleMessagesScroll}
+                        style={{
                         flex: 1,
                         overflowY: 'auto',
                         padding: '20px',

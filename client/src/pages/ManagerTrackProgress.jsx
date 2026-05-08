@@ -167,7 +167,7 @@ export default function ManagerTrackProgress() {
 			acc.total += 1
 			if (task.status === 'Completed') acc.completed += 1
 			if (task.status === 'Changes Requested') acc.revision += 1
-			if (task.status.includes('In Progress')) acc.active += 1
+			if (task.status.includes('In Progress') || task.status === 'Delayed') acc.active += 1
 			return acc
 		}, { total: 0, completed: 0, revision: 0, active: 0 })
 	}, [filteredTasks])

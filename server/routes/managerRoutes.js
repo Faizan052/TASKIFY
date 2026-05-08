@@ -6,7 +6,7 @@ const User = require('../models/User');
 const Task = require('../models/Task');
 const { protect } = require('../middleware/auth');
 const { roleRequired } = require('../middleware/roles');
-const { STATUS, STAGE, setTaskState, notifyUsers } = require('../utils/taskWorkflow');
+const { STATUS, STAGE, setTaskState, notifyUsers, getActiveStageKey, hasHistoryNote, markTaskDelayed } = require('../utils/taskWorkflow');
 const { buildPerformanceReport } = require('../utils/performanceReports');
 
 const normalizeId = (value) => {
@@ -41,6 +41,35 @@ const dedupeTasks = (tasks) => {
 };
 
 const formatRoleLabel = (value) => value ? value.charAt(0).toUpperCase() + value.slice(1) : '';
+
+const STAGE_ROLE_LABELS = {
+    designer: 'Designer',
+    developer: 'Developer',
+    tester: 'Tester'
+};
+
+const applyDelayCheck = async ({ task, actor }) => {
+    const stageKey = getActiveStageKey(task);
+    if (!stageKey) return false;
+    const assignment = task.stageAssignments?.[stageKey];
+    if (!assignment || assignment.status !== 'in_progress' || !assignment.deadline) return false;
+    const due = new Date(assignment.deadline);
+    if (Number.isNaN(due.getTime()) || due.getTime() >= Date.now()) return false;
+    if (assignment.status === 'delayed') return false;
+    const noteKey = `${stageKey} deadline exceeded`;
+    if (hasHistoryNote(task, noteKey)) return false;
+
+    const updated = markTaskDelayed({ task, stageKey, actor });
+    if (updated && task.manager) {
+        await notifyUsers({
+            recipients: [task.manager],
+            message: `Deadline exceeded for ${STAGE_ROLE_LABELS[stageKey]} on task ${task.title}.`,
+            task: task._id,
+            stage: task.currentStage
+        });
+    }
+    return updated;
+};
 
 const getUserCategories = (user) => {
     if (Array.isArray(user?.categories) && user.categories.length > 0) {
@@ -338,7 +367,7 @@ router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(a
     }
 
     const findMemberByRole = (role) => {
-        const member = (team.members || []).find(m => m.role === role);
+        const member = (team?.members || []).find(m => m.role === role);
         if (!member) {
             res.status(400);
             throw new Error(`Team ${team.name} does not have a ${role}`);
@@ -360,6 +389,20 @@ router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(a
             throw new Error(`Provide a valid ${label} deadline`);
         }
         return dt;
+    };
+
+    const projectDeadline = new Date(task.deadline);
+    if (Number.isNaN(projectDeadline.getTime())) {
+        res.status(400);
+        throw new Error('Task deadline is invalid');
+    }
+
+    const ensureWithinProjectDeadline = (dateValue) => {
+        if (!dateValue) return;
+        if (dateValue.getTime() > projectDeadline.getTime()) {
+            res.status(400);
+            throw new Error('Deadline cannot exceed project final deadline.');
+        }
     };
 
     const managerCategories = getUserCategories(req.user);
@@ -423,15 +466,34 @@ router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(a
 
         task.assignedTeam = team._id;
 
+        const designerDue = parseDeadline(designerDeadline, 'designer', true);
+        const developerDue = parseDeadline(developerDeadline, 'developer', true);
+        const testerDue = parseDeadline(testerDeadline, 'tester', true);
+
+        ensureWithinProjectDeadline(designerDue);
+        ensureWithinProjectDeadline(developerDue);
+        ensureWithinProjectDeadline(testerDue);
+
+        if (developerDue.getTime() < designerDue.getTime()) {
+            res.status(400);
+            throw new Error('Developer deadline cannot be before designer deadline');
+        }
+        if (testerDue.getTime() < developerDue.getTime()) {
+            res.status(400);
+            throw new Error('Tester deadline cannot be before developer deadline');
+        }
+
         task.stageAssignments.designer.user = designer._id;
-        task.stageAssignments.designer.deadline = parseDeadline(designerDeadline, 'designer', true);
+        task.stageAssignments.designer.deadline = designerDue;
         task.stageAssignments.designer.status = 'in_progress';
 
         task.stageAssignments.developer.user = developer._id;
-        task.stageAssignments.developer.deadline = parseDeadline(developerDeadline, 'developer');
+        task.stageAssignments.developer.deadline = developerDue;
+        task.stageAssignments.developer.status = 'pending';
 
         task.stageAssignments.tester.user = tester._id;
-        task.stageAssignments.tester.deadline = parseDeadline(testerDeadline, 'tester');
+        task.stageAssignments.tester.deadline = testerDue;
+        task.stageAssignments.tester.status = 'pending';
 
         task.assignedTo = designer._id;
         setTaskState(task, {
@@ -446,18 +508,6 @@ router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(a
             message: `Manager assigned project ${task.title} to your team for design work`,
             task: task._id,
             stage: STAGE.DESIGN
-        });
-        await notifyUsers({
-            recipients: [developer._id],
-            message: `Project ${task.title} is queued for development after design approval`,
-            task: task._id,
-            stage: STAGE.DEVELOPMENT
-        });
-        await notifyUsers({
-            recipients: [tester._id],
-            message: `Project ${task.title} will move to you after development approval`,
-            task: task._id,
-            stage: STAGE.TESTING
         });
     } else {
         const directUser = await User.findById(normalizedUserId).select('_id name email role category categories');
@@ -480,13 +530,50 @@ router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(a
             throw new Error(`Selected user categories do not include task category (${task.category})`);
         }
 
-        task.assignedTeam = managingTeam._id;
+        const fullTeam = await Team.findById(managingTeam._id)
+            .populate('members', 'name email role category categories');
+        if (!fullTeam) {
+            res.status(404);
+            throw new Error('Assigned team not found');
+        }
+
+        const roleMap = {
+            designer: fullTeam.members.find(member => member.role === 'designer') || null,
+            developer: fullTeam.members.find(member => member.role === 'developer') || null,
+            tester: fullTeam.members.find(member => member.role === 'tester') || null
+        };
+        const missingRoles = Object.entries(roleMap).filter(([, member]) => !member).map(([role]) => role);
+        if (missingRoles.length) {
+            res.status(400);
+            throw new Error(`Assigned team is missing required roles: ${missingRoles.map(formatRoleLabel).join(', ')}`);
+        }
+
+        task.assignedTeam = fullTeam._id;
         task.assignedTo = directUser._id;
 
+        task.stageAssignments.designer.user = roleMap.designer._id;
+        task.stageAssignments.developer.user = roleMap.developer._id;
+        task.stageAssignments.tester.user = roleMap.tester._id;
+
+        const designerDue = designerDeadline ? parseDeadline(designerDeadline, 'designer') : null;
+        const developerDue = developerDeadline ? parseDeadline(developerDeadline, 'developer') : null;
+        const testerDue = testerDeadline ? parseDeadline(testerDeadline, 'tester') : null;
+
+        ensureWithinProjectDeadline(designerDue);
+        ensureWithinProjectDeadline(developerDue);
+        ensureWithinProjectDeadline(testerDue);
+
+        if (designerDue) task.stageAssignments.designer.deadline = designerDue;
+        if (developerDue) task.stageAssignments.developer.deadline = developerDue;
+        if (testerDue) task.stageAssignments.tester.deadline = testerDue;
+
         if (directUser.role === 'designer') {
-            task.stageAssignments.designer.user = directUser._id;
-            task.stageAssignments.designer.deadline = parseDeadline(designerDeadline, 'designer', true);
+            const requiredDesignerDue = parseDeadline(designerDeadline, 'designer', true);
+            ensureWithinProjectDeadline(requiredDesignerDue);
+            task.stageAssignments.designer.deadline = requiredDesignerDue;
             task.stageAssignments.designer.status = 'in_progress';
+            task.stageAssignments.developer.status = 'pending';
+            task.stageAssignments.tester.status = 'pending';
             setTaskState(task, {
                 status: STATUS.DESIGN_IN_PROGRESS,
                 stage: STAGE.DESIGN,
@@ -494,10 +581,17 @@ router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(a
                 actor: req.user._id
             });
         } else if (directUser.role === 'developer') {
-            task.stageAssignments.developer.user = directUser._id;
-            task.stageAssignments.developer.deadline = parseDeadline(developerDeadline, 'developer', true);
+            const requiredDeveloperDue = parseDeadline(developerDeadline, 'developer', true);
+            ensureWithinProjectDeadline(requiredDeveloperDue);
+            const designerCompletion = designerDue || new Date();
+            if (requiredDeveloperDue.getTime() < designerCompletion.getTime()) {
+                res.status(400);
+                throw new Error('Developer deadline cannot be before designer completion deadline');
+            }
+            task.stageAssignments.developer.deadline = requiredDeveloperDue;
             task.stageAssignments.developer.status = 'in_progress';
-            task.stageAssignments.designer.status = 'approved';
+            task.stageAssignments.designer.status = 'completed';
+            task.stageAssignments.tester.status = 'pending';
             setTaskState(task, {
                 status: STATUS.DEVELOPMENT_IN_PROGRESS,
                 stage: STAGE.DEVELOPMENT,
@@ -505,11 +599,17 @@ router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(a
                 actor: req.user._id
             });
         } else {
-            task.stageAssignments.tester.user = directUser._id;
-            task.stageAssignments.tester.deadline = parseDeadline(testerDeadline, 'tester', true);
+            const requiredTesterDue = parseDeadline(testerDeadline, 'tester', true);
+            ensureWithinProjectDeadline(requiredTesterDue);
+            const developerCompletion = developerDue || new Date();
+            if (requiredTesterDue.getTime() < developerCompletion.getTime()) {
+                res.status(400);
+                throw new Error('Tester deadline cannot be before developer deadline');
+            }
+            task.stageAssignments.tester.deadline = requiredTesterDue;
             task.stageAssignments.tester.status = 'in_progress';
-            task.stageAssignments.designer.status = 'approved';
-            task.stageAssignments.developer.status = 'approved';
+            task.stageAssignments.designer.status = 'completed';
+            task.stageAssignments.developer.status = 'completed';
             setTaskState(task, {
                 status: STATUS.TESTING_IN_PROGRESS,
                 stage: STAGE.TESTING,
@@ -573,7 +673,15 @@ router.get('/tasks', protect, roleRequired('manager'), asyncHandler(async (req, 
         .populate({ path: 'stageAssignments.tester.user', select: 'name email role category' })
         .sort({ createdAt: -1 });
 
-    res.json(dedupeTasks(tasks));
+    const unique = dedupeTasks(tasks);
+    for (const task of unique) {
+        const changed = await applyDelayCheck({ task, actor: req.user._id });
+        if (changed) {
+            await task.save();
+        }
+    }
+
+    res.json(unique);
 }));
 
 router.get('/performance-report', protect, roleRequired('manager'), asyncHandler(async (req, res) => {

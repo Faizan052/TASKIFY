@@ -110,14 +110,9 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 	const formatEstimatedEffort = () => {
 		if (!aiAnalysis) return '—'
 		const hours = Number(aiAnalysis.estimatedHours || 0)
-		if (hours > 0 && hours < 8) {
-			return `${hours} hour${hours === 1 ? '' : 's'}`
-		}
-		if (hours >= 8) {
-			const daysFromHours = (hours / 8).toFixed(2).replace(/\.00$/, '')
-			return `${daysFromHours} days`
-		}
-		return `${aiAnalysis.estimatedDays} days`
+		const days = Number(aiAnalysis.estimatedDays || 0)
+		const resolvedDays = days > 0 ? days : Math.max(1, Math.ceil(hours / 8))
+		return `${resolvedDays} days`
 	}
 
 	const submit = async (e) => {

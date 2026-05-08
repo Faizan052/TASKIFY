@@ -12,7 +12,7 @@ const assignmentStageSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['pending', 'in_progress', 'submitted', 'approved', 'revisions']
+        enum: ['pending', 'in_progress', 'submitted', 'approved', 'revisions', 'completed', 'delayed']
     },
     submittedAt: {
         type: Date,
@@ -97,7 +97,8 @@ const taskSchema = new mongoose.Schema({
             'Awaiting HR Review',
             'Awaiting Client Review',
             'Changes Requested',
-            'Completed'
+            'Completed',
+            'Delayed'
         ],
         default: 'Client Requested'
     },

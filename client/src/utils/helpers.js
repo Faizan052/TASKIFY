@@ -7,7 +7,53 @@ export const formatDate = (date, includeTime = false) => {
   if (!date) return '—'
   const d = new Date(date)
   if (isNaN(d.getTime())) return '—'
-  return includeTime ? d.toLocaleString() : d.toLocaleDateString()
+  const day = String(d.getDate()).padStart(2, '0')
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const year = d.getFullYear()
+  const dateStr = `${day}/${month}/${year}`
+  if (!includeTime) return dateStr
+  const hours = String(d.getHours()).padStart(2, '0')
+  const minutes = String(d.getMinutes()).padStart(2, '0')
+  return `${dateStr} ${hours}:${minutes}`
+}
+
+const DAY_MS = 1000 * 60 * 60 * 24
+
+export const getRemainingDays = (deadline) => {
+  if (!deadline) return null
+  const target = new Date(deadline)
+  if (isNaN(target.getTime())) return null
+  const diff = target.getTime() - Date.now()
+  return Math.ceil(diff / DAY_MS)
+}
+
+export const formatRemainingDays = (deadline) => {
+  const days = getRemainingDays(deadline)
+  if (days === null) return '—'
+  if (days < 0) {
+    const overdue = Math.abs(days)
+    return `Overdue by ${overdue} day${overdue === 1 ? '' : 's'}`
+  }
+  return `${days} day${days === 1 ? '' : 's'} remaining`
+}
+
+export const getSlackDays = (stageDeadline, projectDeadline) => {
+  if (!stageDeadline || !projectDeadline) return null
+  const stage = new Date(stageDeadline)
+  const project = new Date(projectDeadline)
+  if (isNaN(stage.getTime()) || isNaN(project.getTime())) return null
+  const diff = project.getTime() - stage.getTime()
+  return Math.ceil(diff / DAY_MS)
+}
+
+export const formatSlackDays = (stageDeadline, projectDeadline) => {
+  const days = getSlackDays(stageDeadline, projectDeadline)
+  if (days === null) return '—'
+  if (days < 0) {
+    const over = Math.abs(days)
+    return `Exceeds project by ${over} day${over === 1 ? '' : 's'}`
+  }
+  return `${days} day${days === 1 ? '' : 's'} left`
 }
 
 // Role formatting helper
@@ -87,7 +133,8 @@ export const TASK_STAGES = {
   'Awaiting HR Review': { label: 'HR Review', progress: 90, color: '#f59e0b' },
   'Awaiting Client Review': { label: 'Client Review', progress: 95, color: '#ec4899' },
   'Completed': { label: 'Completed', progress: 100, color: '#22c55e' },
-  'Changes Requested': { label: 'Revisions Needed', progress: 40, color: '#ef4444' }
+  'Changes Requested': { label: 'Revisions Needed', progress: 40, color: '#ef4444' },
+  'Delayed': { label: 'Delayed', progress: 30, color: '#f97316' }
 }
 
 export const getTaskStage = (status) => {
