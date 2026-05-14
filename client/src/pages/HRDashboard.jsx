@@ -45,6 +45,10 @@ export default function HRDashboard(){
 	const [_updatingProfile, setUpdatingProfile] = useState(false)
 	const [deletingManagerId, setDeletingManagerId] = useState(null)
 	const [_registeredUsers, setRegisteredUsers] = useState([])
+	const [pendingUsers, setPendingUsers] = useState([])
+	const [loadingPendingUsers, setLoadingPendingUsers] = useState(false)
+	const [userActionLoading, setUserActionLoading] = useState({})
+	const [rejectionReasons, setRejectionReasons] = useState({})
 	const [categoryStats, setCategoryStats] = useState({})
 	const [showManagerCategoryModal, setShowManagerCategoryModal] = useState(false)
 	const [performanceReport, setPerformanceReport] = useState(null)
@@ -76,6 +80,7 @@ export default function HRDashboard(){
 	const awaitingHrReview = useMemo(() => tasks.filter(task => task.status === 'Awaiting HR Review'), [tasks])
 	const awaitingClientReview = useMemo(() => tasks.filter(task => task.status === 'Awaiting Client Review'), [tasks])
 	const completedTasks = useMemo(() => tasks.filter(task => task.status === 'Completed'), [tasks])
+	const cancelledTasks = useMemo(() => tasks.filter(task => task.status === 'Cancelled'), [tasks])
 	const teamTaskStats = useMemo(() => {
 		const map = {}
 		for (const task of tasks) {
@@ -154,16 +159,18 @@ export default function HRDashboard(){
 		if (withSpinner) setLoading(true)
 		setError(null)
 		try{
-			const [profileData, overviewData, taskData, reportData] = await Promise.all([
+			const [profileData, overviewData, taskData, reportData, pendingUsersData] = await Promise.all([
 				apiFetch('/api/user/profile'),
 				apiFetch('/api/hr/overview'),
 				apiFetch('/api/hr/tasks'),
-				apiFetch('/api/hr/performance-report')
+				apiFetch('/api/hr/performance-report'),
+				apiFetch('/api/hr/users?status=pending')
 			])
 			setProfile(profileData)
 			setOverview(overviewData)
 			setTasks(taskData)
 			setPerformanceReport(reportData)
+			setPendingUsers(Array.isArray(pendingUsersData) ? pendingUsersData : [])
 		}catch(err){ setError(err.message) }
 		finally{ 
 			if (withSpinner) setLoading(false)
@@ -234,6 +241,48 @@ export default function HRDashboard(){
 			setCategoryStats(stats)
 		} catch(err) {
 			console.error('Failed to load registered users:', err)
+		}
+	}
+
+	const loadPendingUsers = useCallback(async () => {
+		setLoadingPendingUsers(true)
+		try {
+			const users = await apiFetch('/api/hr/users?status=pending')
+			setPendingUsers(Array.isArray(users) ? users : [])
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setLoadingPendingUsers(false)
+		}
+	}, [])
+
+	const handleApproveUser = async (userId) => {
+		setUserActionLoading(prev => ({ ...prev, [userId]: 'approve' }))
+		setError(null)
+		try {
+			await apiFetch(`/api/hr/users/${userId}/approve`, { method: 'PATCH' })
+			setMessage('User approved successfully')
+			await loadPendingUsers()
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setUserActionLoading(prev => ({ ...prev, [userId]: null }))
+		}
+	}
+
+	const handleRejectUser = async (userId) => {
+		if (!confirm('Reject this user registration?')) return
+		setUserActionLoading(prev => ({ ...prev, [userId]: 'reject' }))
+		setError(null)
+		try {
+			const reason = (rejectionReasons[userId] || '').trim()
+			await apiFetch(`/api/hr/users/${userId}/reject`, { method: 'PATCH', body: { reason } })
+			setMessage('User rejected')
+			await loadPendingUsers()
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setUserActionLoading(prev => ({ ...prev, [userId]: null }))
 		}
 	}
 
@@ -495,7 +544,7 @@ export default function HRDashboard(){
 
 						<div className="admin-nav-dropdown" onMouseEnter={(e) => e.currentTarget.classList.add('open')} onMouseLeave={(e) => e.currentTarget.classList.remove('open')}>
 							<button 
-								className={`admin-nav-btn ${['managers', 'requests', 'teams'].includes(activeView) ? 'active' : ''}`}
+								className={`admin-nav-btn ${['managers', 'requests', 'teams', 'user-approvals'].includes(activeView) ? 'active' : ''}`}
 						>
 							<span className="nav-icon">⚙️</span>
 							<span>Manage</span>
@@ -506,6 +555,10 @@ export default function HRDashboard(){
 								<span className="dropdown-icon">👔</span>
 								Managers
 							</button>
+								<button className="dropdown-item" onClick={() => { setActiveView('user-approvals'); loadPendingUsers() }}>
+									<span className="dropdown-icon">✅</span>
+									User Approvals
+								</button>
 							<button className="dropdown-item" onClick={() => setActiveView('requests')}>
 								<span className="dropdown-icon">📨</span>
 								Requests
@@ -729,13 +782,13 @@ export default function HRDashboard(){
 												<div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '8px'}}>
 													<span style={{fontSize: '14px', fontWeight: 600, color: '#374151'}}>Overall Completion Rate</span>
 													<span style={{fontSize: '14px', fontWeight: 700, color: '#667eea'}}>
-														{tasks.length > 0 ? Math.round((completedTasks.length / tasks.length) * 100) : 0}%
+														{(tasks.length - cancelledTasks.length) > 0 ? Math.round((completedTasks.length / (tasks.length - cancelledTasks.length)) * 100) : 0}%
 													</span>
 												</div>
 												<div style={{height: '12px', background: '#e5e7eb', borderRadius: '12px', overflow: 'hidden'}}>
 													<div style={{
 														height: '100%',
-														width: `${tasks.length > 0 ? (completedTasks.length / tasks.length) * 100 : 0}%`,
+														width: `${(tasks.length - cancelledTasks.length) > 0 ? (completedTasks.length / (tasks.length - cancelledTasks.length)) * 100 : 0}%`,
 														background: 'linear-gradient(90deg, #22c55e 0%, #16a34a 100%)',
 														borderRadius: '12px',
 														transition: 'width 0.6s ease',
@@ -953,6 +1006,65 @@ export default function HRDashboard(){
 											)}
 										</div>
 							)}
+
+									{activeView === 'user-approvals' && (
+										<div className="dashboard-section">
+											<div className="dashboard-section-header">
+												<h3 className="dashboard-section-title">Pending User Approvals</h3>
+												<span className="status-badge status-pending">{pendingUsers.length} Pending</span>
+											</div>
+											{loadingPendingUsers ? (
+												<p style={{color:'var(--muted)', padding:'24px', textAlign:'center'}}>Loading pending users...</p>
+											) : pendingUsers.length ? (
+												<div style={{display: 'grid', gap: 16}}>
+													{pendingUsers.map(user => (
+														<div key={user._id} className="item-card" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+															<div style={{flex: 1}}>
+																<h4 className="item-title" style={{margin: '0 0 4px 0'}}>{user.name || 'User'}</h4>
+																<div className="item-meta">
+																	<span>📧 {user.email}</span>
+																	<span>🎯 {user.role}</span>
+																	<span>🏷️ {formatCategories(getUserCategories(user))}</span>
+																</div>
+																<div style={{ marginTop: 10 }}>
+																	<label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>
+																		Rejection reason (optional)
+																	</label>
+																	<textarea
+																		rows={2}
+																		value={rejectionReasons[user._id] || ''}
+																		onChange={(e) => setRejectionReasons(prev => ({ ...prev, [user._id]: e.target.value }))}
+																		placeholder="Add a short reason for rejection"
+																		style={{ width: '100%', maxWidth: 460, borderRadius: 8, border: '1px solid #e2e8f0', padding: 8, fontSize: 13 }}
+																	/>
+																</div>
+															</div>
+															<div style={{display: 'flex', gap: 8}}>
+																<button
+																	className="btn small"
+																	onClick={() => handleApproveUser(user._id)}
+																	disabled={userActionLoading[user._id]}
+																>
+																	{userActionLoading[user._id] === 'approve' ? 'Approving...' : 'Approve'}
+																</button>
+																<button
+																	className="btn small danger-action"
+																	onClick={() => handleRejectUser(user._id)}
+																	disabled={userActionLoading[user._id]}
+																>
+																	{userActionLoading[user._id] === 'reject' ? 'Rejecting...' : 'Reject'}
+																</button>
+															</div>
+														</div>
+													))}
+												</div>
+											) : (
+												<p style={{color:'var(--muted)', padding:'32px', textAlign:'center', background:'#f8fafc', borderRadius:'8px'}}>
+													No pending user registrations.
+												</p>
+											)}
+										</div>
+									)}
 
 								{/* CLIENT REQUESTS VIEW */}
 								{activeView === 'requests' && (

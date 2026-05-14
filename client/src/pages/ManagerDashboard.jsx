@@ -34,6 +34,7 @@ const STATUS = {
 	AWAITING_HR_REVIEW: 'Awaiting HR Review',
 	AWAITING_CLIENT_REVIEW: 'Awaiting Client Review',
 	COMPLETED: 'Completed',
+	CANCELLED: 'Cancelled',
 	DELAYED: 'Delayed'
 }
 
@@ -634,10 +635,11 @@ export default function ManagerDashboard(){
 		setError(null)
 		setMessage('')
 		try {
-			await apiFetch(`/api/manager/tasks/${task._id}/decision`, {
+			const updatedTask = await apiFetch(`/api/manager/tasks/${task._id}/decision`, {
 				method: 'PUT',
 				body: { decision, comment }
 			})
+			setTasks(prev => prev.map(item => item._id === updatedTask._id ? updatedTask : item))
 			setDecisionInputs(prev => {
 				const next = { ...prev }
 				delete next[task._id]
@@ -1239,6 +1241,7 @@ export default function ManagerDashboard(){
 									const decisionState = task.managerDecision?.decision || 'pending'
 									const pendingDecision = task.status === STATUS.AWAITING_MANAGER_ASSIGNMENT && decisionState !== 'accepted'
 									const selectedUser = selection.userId ? managedUsers.find(user => user._id === selection.userId) : null
+									const taskUid = `task-${task._id}`
 									return (
 										<div key={task._id} className="item-card ma-task-card">
 											<div className="item-header ma-task-head">
@@ -1265,6 +1268,7 @@ export default function ManagerDashboard(){
 											{pendingDecision ? (
 												<>
 													<textarea
+														id={`${taskUid}-decision-comment`}
 														value={decisionInputs[task._id] || ''}
 														onChange={e => setDecisionInput(task._id, e.target.value)}
 														placeholder="Add feedback (required for rejection)"
@@ -1297,6 +1301,7 @@ export default function ManagerDashboard(){
 													{selection.mode === 'team' ? (
 														<div className="small-row ma-select-row">
 															<select value={selection.teamId} onChange={e=>setAssignmentSelection(task._id, 'teamId', e.target.value)} className="ma-input ma-select">
+																id={`${taskUid}-team-select`}
 																<option value="">Select team</option>
 																{teams.map(team => (
 																	<option key={team._id} value={team._id}>{team.name} — {getTeamStatus(team._id).label}</option>
@@ -1316,6 +1321,7 @@ export default function ManagerDashboard(){
 															<div className="ma-user-label">Select individual user</div>
 															<div className="small-row ma-select-row">
 															<select value={selection.userId} onChange={e=>setAssignmentSelection(task._id, 'userId', e.target.value)} className="ma-input ma-select">
+																id={`${taskUid}-user-select`}
 																<option value="">Select individual user</option>
 																{managedUsers.map(user => {
 																	const metric = performanceByUserId[user._id]
@@ -1348,6 +1354,7 @@ export default function ManagerDashboard(){
 																	<label className="ma-deadline-field">
 																		Designer deadline
 																		<input
+																			id={`${taskUid}-designer-deadline`}
 																			className="ma-input"
 																			type="datetime-local"
 																			value={selection.designerDeadline}
@@ -1359,6 +1366,7 @@ export default function ManagerDashboard(){
 																	<label className="ma-deadline-field">
 																		Developer deadline
 																		<input
+																			id={`${taskUid}-developer-deadline`}
 																			className="ma-input"
 																			type="datetime-local"
 																			value={selection.developerDeadline}
@@ -1371,6 +1379,7 @@ export default function ManagerDashboard(){
 																	<label className="ma-deadline-field">
 																		Tester deadline
 																		<input
+																			id={`${taskUid}-tester-deadline`}
 																			className="ma-input"
 																			type="datetime-local"
 																			value={selection.testerDeadline}
@@ -1385,6 +1394,7 @@ export default function ManagerDashboard(){
 																<label className="ma-deadline-field ma-user-deadline-field">
 																	{selectedUser ? `${formatRole(selectedUser.role)} deadline` : 'Selected user deadline'}
 																	<input
+																		id={`${taskUid}-user-deadline`}
 																		className="ma-input"
 																		type="datetime-local"
 																		value={selectedUser?.role === 'designer' ? selection.designerDeadline : selectedUser?.role === 'developer' ? selection.developerDeadline : selection.testerDeadline}

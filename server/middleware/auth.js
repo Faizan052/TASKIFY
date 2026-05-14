@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Admin = require('../models/Admin');
+const { isValidObjectId } = require('../utils/validation');
 
 const protect = async (req, res, next) => {
     let token;
@@ -9,6 +10,10 @@ const protect = async (req, res, next) => {
         if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
             token = req.headers.authorization.split(' ')[1];
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            if (!decoded?.id || !isValidObjectId(decoded.id)) {
+                res.status(401);
+                return next(new Error('Not authorized, token failed'));
+            }
 
             // Check if the token belongs to an admin
             const admin = await Admin.findById(decoded.id).select('-password');

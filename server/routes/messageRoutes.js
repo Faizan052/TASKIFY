@@ -5,6 +5,7 @@ const Message = require('../models/Message');
 const User = require('../models/User');
 const Admin = require('../models/Admin');
 const { protect } = require('../middleware/auth');
+const { isValidObjectId } = require('../utils/validation');
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
@@ -93,6 +94,10 @@ router.get('/contacts', protect, asyncHandler(async (req, res) => {
 // Get conversation with a specific user
 router.get('/conversation/:recipientId', protect, asyncHandler(async (req, res) => {
     const { recipientId } = req.params;
+    if (!isValidObjectId(recipientId)) {
+        res.status(400);
+        throw new Error('Invalid recipient id');
+    }
     const currentUserId = req.user._id;
     const currentUserModel = req.isAdmin ? 'Admin' : 'User';
 
@@ -109,6 +114,8 @@ router.get('/conversation/:recipientId', protect, asyncHandler(async (req, res) 
 
     // Get all messages between these two users
     const messages = await Message.find({
+        sender: { $type: 'objectId' },
+        recipient: { $type: 'objectId' },
         $or: [
             { sender: currentUserId, senderModel: currentUserModel, recipient: recipientId },
             { sender: recipientId, recipient: currentUserId, recipientModel: currentUserModel }
@@ -128,6 +135,10 @@ router.post('/send', protect, asyncHandler(async (req, res) => {
     if (!recipientId || !content || !content.trim()) {
         res.status(400);
         throw new Error('Recipient and message content are required');
+    }
+    if (!isValidObjectId(recipientId)) {
+        res.status(400);
+        throw new Error('Invalid recipient id');
     }
 
     // Verify user can message this recipient
@@ -159,6 +170,10 @@ router.post('/send', protect, asyncHandler(async (req, res) => {
 // Mark messages as read
 router.put('/read/:recipientId', protect, asyncHandler(async (req, res) => {
     const { recipientId } = req.params;
+    if (!isValidObjectId(recipientId)) {
+        res.status(400);
+        throw new Error('Invalid recipient id');
+    }
     const currentUserId = req.user._id;
     const currentUserModel = req.isAdmin ? 'Admin' : 'User';
 
@@ -183,6 +198,8 @@ router.get('/unread-count', protect, asyncHandler(async (req, res) => {
     const currentUserModel = req.isAdmin ? 'Admin' : 'User';
 
     const count = await Message.countDocuments({
+        sender: { $type: 'objectId' },
+        recipient: { $type: 'objectId' },
         recipient: currentUserId,
         recipientModel: currentUserModel,
         read: false
@@ -198,6 +215,8 @@ router.get('/conversations', protect, asyncHandler(async (req, res) => {
 
     // Get all messages involving current user
     const messages = await Message.find({
+        sender: { $type: 'objectId' },
+        recipient: { $type: 'objectId' },
         $or: [
             { sender: currentUserId, senderModel: currentUserModel },
             { recipient: currentUserId, recipientModel: currentUserModel }

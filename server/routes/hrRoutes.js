@@ -8,7 +8,7 @@ const PasswordReset = require('../models/PasswordReset');
 const { protect } = require('../middleware/auth');
 const { roleRequired } = require('../middleware/roles');
 const { STATUS, STAGE, setTaskState, notifyUsers } = require('../utils/taskWorkflow');
-const { trySendWelcomeEmail, trySendNewPasswordEmail } = require('../utils/emailNotifications');
+const { trySendWelcomeEmail, trySendNewPasswordEmail, trySendTaskStageEmail, trySendAccountApprovalEmail, trySendAccountRejectionEmail } = require('../utils/emailNotifications');
 const { normalizeEmail, assertUniqueIdentity } = require('../utils/identity');
 const { buildPerformanceReport } = require('../utils/performanceReports');
 
@@ -50,6 +50,120 @@ const collectManagerIds = async () => {
     const managers = await User.find({ role: 'manager' }).select('_id');
     return managers.map(manager => manager._id);
 };
+
+const SELF_REGISTERED_ROLES = ['developer', 'designer', 'tester', 'client'];
+
+const enqueueEmail = (handler) => {
+    Promise.resolve().then(handler).catch(() => {});
+};
+
+// HR lists users for approval
+router.get('/users', protect, roleRequired('hr'), asyncHandler(async (req, res) => {
+    const status = (req.query.status || '').toString().trim().toLowerCase();
+    const filter = { role: { $in: SELF_REGISTERED_ROLES } };
+    if (status) {
+        filter.approvalStatus = status;
+    }
+
+    const users = await User.find(filter)
+        .select('name email role categories category approvalStatus isActive createdAt')
+        .sort({ createdAt: -1 });
+
+    res.json(users);
+}));
+
+// HR approves a pending user
+router.patch('/users/:id/approve', protect, roleRequired('hr'), asyncHandler(async (req, res) => {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+        res.status(404);
+        throw new Error('User not found');
+    }
+
+    if (!SELF_REGISTERED_ROLES.includes(user.role)) {
+        res.status(400);
+        throw new Error('Only self-registered users can be approved here');
+    }
+
+    user.approvalStatus = 'approved';
+    user.approvalReviewedAt = new Date();
+    user.isActive = true;
+    await user.save();
+
+    await notifyUsers({
+        recipients: [user._id],
+        message: 'Your account has been approved. You can now log in.',
+        meta: { approvalStatus: 'approved' }
+    });
+
+    if (user.email) {
+        await trySendAccountApprovalEmail({
+            email: user.email,
+            name: user.name || user.email,
+            errorMessage: 'Failed to send account approval email:'
+        });
+    }
+
+    res.json({
+        message: 'User approved successfully',
+        user: {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            approvalStatus: user.approvalStatus,
+            isActive: user.isActive
+        }
+    });
+}));
+
+// HR rejects a pending user
+router.patch('/users/:id/reject', protect, roleRequired('hr'), asyncHandler(async (req, res) => {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+        res.status(404);
+        throw new Error('User not found');
+    }
+
+    const reason = (req.body.reason || '').toString().trim();
+
+    if (!SELF_REGISTERED_ROLES.includes(user.role)) {
+        res.status(400);
+        throw new Error('Only self-registered users can be rejected here');
+    }
+
+    user.approvalStatus = 'rejected';
+    user.approvalReviewedAt = new Date();
+    user.isActive = false;
+    await user.save();
+
+    await notifyUsers({
+        recipients: [user._id],
+        message: 'Your registration was rejected. You cannot log in.',
+        meta: { approvalStatus: 'rejected', reason }
+    });
+
+    if (user.email) {
+        await trySendAccountRejectionEmail({
+            email: user.email,
+            name: user.name || user.email,
+            reason,
+            errorMessage: 'Failed to send account rejection email:'
+        });
+    }
+
+    res.json({
+        message: 'User rejected successfully',
+        user: {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            approvalStatus: user.approvalStatus,
+            isActive: user.isActive
+        }
+    });
+}));
 
 // HR creates manager
 router.post('/managers', protect, roleRequired('hr'), asyncHandler(async (req, res) => {
@@ -458,10 +572,20 @@ router.put('/tasks/:id/assign', protect, roleRequired('hr'), asyncHandler(async 
 
     await notifyUsers({
         recipients: [manager._id],
-        message: `HR assigned project ${task.title} to you`,
+        message: 'A new task has been assigned to you.',
         task: task._id,
         stage: STAGE.MANAGER_PLANNING
     });
+
+    if (manager.email) {
+        enqueueEmail(() => trySendTaskStageEmail({
+            email: manager.email,
+            name: manager.name || manager.email,
+            roleLabel: 'Manager',
+            taskTitle: task.title,
+            message: 'A new task has been assigned to you.'
+        }));
+    }
 
     res.json(updated);
 }));
@@ -481,6 +605,7 @@ router.put('/tasks/:id/send-client', protect, roleRequired('hr'), asyncHandler(a
 
     const assignToClient = task.createdByRole === 'client' ? task.createdBy : null;
     task.assignedTo = assignToClient;
+    task.clientReviewOrigin = 'hr_delivery';
     setTaskState(task, {
         status: STATUS.AWAITING_CLIENT_REVIEW,
         stage: STAGE.CLIENT_REVIEW,
@@ -501,6 +626,16 @@ router.put('/tasks/:id/send-client', protect, roleRequired('hr'), asyncHandler(a
             task: task._id,
             stage: STAGE.CLIENT_REVIEW
         });
+        const clientUser = await User.findById(assignToClient).select('name email role');
+        if (clientUser?.email) {
+            enqueueEmail(() => trySendTaskStageEmail({
+                email: clientUser.email,
+                name: clientUser.name || clientUser.email,
+                roleLabel: 'Client',
+                taskTitle: task.title,
+                message: `Project ${task.title} is ready for your review`
+            }));
+        }
     }
 
     res.json(updated);

@@ -133,6 +133,7 @@ export const TASK_STAGES = {
   'Awaiting HR Review': { label: 'HR Review', progress: 90, color: '#f59e0b' },
   'Awaiting Client Review': { label: 'Client Review', progress: 95, color: '#ec4899' },
   'Completed': { label: 'Completed', progress: 100, color: '#22c55e' },
+  'Cancelled': { label: 'Cancelled', progress: 0, color: '#94a3b8' },
   'Changes Requested': { label: 'Revisions Needed', progress: 40, color: '#ef4444' },
   'Delayed': { label: 'Delayed', progress: 30, color: '#f97316' }
 }

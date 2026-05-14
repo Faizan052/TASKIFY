@@ -8,14 +8,14 @@ const Team = require('../models/Team');
 const Notification = require('../models/Notification');
 const OTP = require('../models/OTP');
 const { generateOTP, sendOTPEmail } = require('../utils/emailService');
-const { trySendWelcomeEmail, trySendTaskStageEmail } = require('../utils/emailNotifications');
+const { trySendTaskStageEmail } = require('../utils/emailNotifications');
 const { analyzeRequestFeasibility } = require('../utils/feasibilityService');
 const { validateEmail } = require('../utils/validation');
 const { normalizeEmail, assertUniqueIdentity } = require('../utils/identity');
 const upload = require('../middleware/upload');
 const { protect } = require('../middleware/auth');
 const { roleRequired } = require('../middleware/roles');
-const { STATUS, STAGE, setTaskState, notifyUsers, notifyRoles, getActiveStageKey, hasHistoryNote, markTaskDelayed } = require('../utils/taskWorkflow');
+const { STATUS, STAGE, setTaskState, notifyUsers, notifyRoles, getActiveStageKey, hasHistoryNote, markTaskDelayed, pushHistory } = require('../utils/taskWorkflow');
 
 const CATEGORY_OPTIONS = ['website', 'mobile-app', 'desktop-app', 'testing', 'updation', 'design', 'api', 'database', 'other'];
 const ROLES_REQUIRING_CATEGORY = ['developer', 'designer', 'tester'];
@@ -24,6 +24,121 @@ const STAGE_ROLE_LABELS = {
     designer: 'Designer',
     developer: 'Developer',
     tester: 'Tester'
+};
+
+const enqueueEmail = (handler) => {
+    Promise.resolve().then(handler).catch(() => {});
+};
+
+const DEADLINE_NOTICE_DAYS = 5;
+const DEADLINE_NOTICE_MS = DEADLINE_NOTICE_DAYS * 24 * 60 * 60 * 1000;
+
+const isDeadlineNear = (value) => {
+    if (!value) return false;
+    const due = new Date(value);
+    if (Number.isNaN(due.getTime())) return false;
+    const remainingMs = due.getTime() - Date.now();
+    return remainingMs > 0 && remainingMs <= DEADLINE_NOTICE_MS;
+};
+
+const OBJECT_ID_PATTERN = /[a-f0-9]{24}/i;
+
+const isObjectIdValue = (value) => {
+    if (!value || typeof value !== 'object') return false;
+    if (value._bsontype === 'ObjectID' || value._bsontype === 'ObjectId') return true;
+    return isValidObjectId(value);
+};
+
+const extractObjectId = (value) => {
+    if (!value) return null;
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (isValidObjectId(trimmed)) return trimmed;
+        const match = trimmed.match(OBJECT_ID_PATTERN);
+        if (match && isValidObjectId(match[0])) return match[0];
+        return null;
+    }
+    if (isObjectIdValue(value)) return value.toString();
+    if (value._id) return extractObjectId(value._id);
+    if (value.id) return extractObjectId(value.id);
+    if (typeof value.toString === 'function') return extractObjectId(value.toString());
+    return null;
+};
+
+const collectRecipientIds = ({ task, stageKey }) => {
+    const recipients = new Set();
+    const assignedId = extractObjectId(task.assignedTo);
+    const managerId = extractObjectId(task.manager);
+    if (assignedId) recipients.add(assignedId);
+    if (managerId) recipients.add(managerId);
+    if (stageKey) {
+        const stageUser = extractObjectId(task.stageAssignments?.[stageKey]?.user);
+        if (stageUser) recipients.add(stageUser);
+    }
+    return Array.from(recipients);
+};
+
+const notifyDeadlineApproaching = async ({ task, stageKey, deadline, actor, label }) => {
+    if (!deadline || !isDeadlineNear(deadline)) return false;
+    const noteKey = `deadline_notice:${label}:${stageKey || 'project'}:${DEADLINE_NOTICE_DAYS}`;
+    if (hasHistoryNote(task, noteKey)) return false;
+
+    const recipientIds = collectRecipientIds({ task, stageKey });
+    const hrUsers = await User.find({ role: 'hr' }).select('_id name email role');
+    hrUsers.forEach(user => recipientIds.push(user._id.toString()));
+    const uniqueRecipients = Array.from(new Set(recipientIds))
+        .map(extractObjectId)
+        .filter(Boolean);
+    const message = `${label} deadline is approaching in ${DEADLINE_NOTICE_DAYS} days for task ${task.title}.`;
+
+    await notifyUsers({
+        recipients: uniqueRecipients,
+        message,
+        task: task._id,
+        stage: task.currentStage,
+        meta: { deadline }
+    });
+
+    const users = await User.find({ _id: { $in: uniqueRecipients } }).select('name email role');
+    for (const user of users) {
+        if (!user?.email) continue;
+        enqueueEmail(() => trySendTaskStageEmail({
+            email: user.email,
+            name: user.name || user.email,
+            roleLabel: STAGE_ROLE_LABELS[user.role] || user.role || 'User',
+            taskTitle: task.title,
+            message
+        }));
+    }
+
+    pushHistory(task, { stage: task.currentStage, status: task.status, note: noteKey, actor });
+    task.markModified('history');
+    return true;
+};
+
+const applyDeadlineNotices = async ({ task, actor }) => {
+    let changed = false;
+    const stageKey = getActiveStageKey(task);
+    if (stageKey) {
+        const stageDeadline = task.stageAssignments?.[stageKey]?.deadline;
+        const stageChanged = await notifyDeadlineApproaching({
+            task,
+            stageKey,
+            deadline: stageDeadline,
+            actor,
+            label: 'Stage'
+        });
+        if (stageChanged) changed = true;
+    }
+    const projectChanged = await notifyDeadlineApproaching({
+        task,
+        stageKey: null,
+        deadline: task.deadline,
+        actor,
+        label: 'Project'
+    });
+    if (projectChanged) changed = true;
+    return changed;
 };
 
 const applyDelayCheck = async ({ task, actor }) => {
@@ -38,13 +153,33 @@ const applyDelayCheck = async ({ task, actor }) => {
     if (hasHistoryNote(task, noteKey)) return false;
 
     const updated = markTaskDelayed({ task, stageKey, actor });
-    if (updated && task.manager) {
+    if (updated) {
+        const recipientIds = collectRecipientIds({ task, stageKey });
+        const hrUsers = await User.find({ role: 'hr' }).select('_id name email role');
+        hrUsers.forEach(user => recipientIds.push(user._id.toString()));
+        const uniqueRecipients = Array.from(new Set(recipientIds))
+            .map(extractObjectId)
+            .filter(Boolean);
+        const message = `Issue detected: ${STAGE_ROLE_LABELS[stageKey]} stage is delayed for task ${task.title}.`;
+
         await notifyUsers({
-            recipients: [task.manager],
-            message: `Deadline exceeded for ${STAGE_ROLE_LABELS[stageKey]} on task ${task.title}.`,
+            recipients: uniqueRecipients,
+            message,
             task: task._id,
             stage: task.currentStage
         });
+
+        const users = await User.find({ _id: { $in: uniqueRecipients } }).select('name email role');
+        for (const user of users) {
+            if (!user?.email) continue;
+            enqueueEmail(() => trySendTaskStageEmail({
+                email: user.email,
+                name: user.name || user.email,
+                roleLabel: STAGE_ROLE_LABELS[user.role] || user.role || 'User',
+                taskTitle: task.title,
+                message
+            }));
+        }
     }
     return updated;
 };
@@ -224,35 +359,37 @@ router.post('/register', asyncHandler(async (req, res) => {
     }
 
     // Create user with validated data
+    const isClient = role === 'client';
     const user = await User.create({ 
         name: trimmedName, 
         email: trimmedEmail, 
         password, 
         role,
         categories: ROLES_REQUIRING_CATEGORY.includes(role) ? categories : [],
-        category: ROLES_REQUIRING_CATEGORY.includes(role) ? (categories[0] || '') : ''
+        category: ROLES_REQUIRING_CATEGORY.includes(role) ? (categories[0] || '') : '',
+        isActive: isClient,
+        approvalStatus: isClient ? 'approved' : 'pending'
     });
     
     // Delete used OTP
     await OTP.deleteOne({ _id: otpRecord._id });
     
     if (user) {
-        await trySendWelcomeEmail({
-            email: user.email,
-            name: user.name,
-            role: user.role,
-            errorMessage: 'Welcome email failed but registration successful:'
-        });
+        if (!isClient) {
+            await notifyRoles({
+                roles: ['hr'],
+                message: `New user registration pending approval: ${user.name || user.email}`,
+                meta: { userId: user._id }
+            });
 
-        res.status(201).json({ 
-            _id: user._id, 
-            name: user.name, 
-            email: user.email, 
-            role: user.role,
-            categories: user.categories || [],
-            category: user.category,
-            message: 'Registration successful'
-        });
+            res.status(201).json({
+                message: 'Registration submitted for HR review. You will be notified after approval.'
+            });
+        } else {
+            res.status(201).json({
+                message: 'Registration successful.'
+            });
+        }
     } else {
         res.status(400);
         throw new Error('Invalid user data');
@@ -275,7 +412,14 @@ router.post('/login', asyncHandler(async (req, res) => {
     const user = await User.findOne({ email: trimmedEmail });
     
     if (user && (await user.matchPassword(password))) {
-        // Check if user account is active
+        if (user.approvalStatus === 'pending') {
+            res.status(403);
+            throw new Error('ACCOUNT_PENDING');
+        }
+        if (user.approvalStatus === 'rejected') {
+            res.status(403);
+            throw new Error('ACCOUNT_REJECTED');
+        }
         if (user.isActive === false) {
             res.status(403);
             throw new Error('ACCOUNT_DEACTIVATED');
@@ -373,7 +517,8 @@ router.get('/tasks', protect, asyncHandler(async (req, res) => {
 
     for (const task of unique) {
         const changed = await applyDelayCheck({ task, actor: req.user._id });
-        if (changed) {
+        const deadlineNotified = await applyDeadlineNotices({ task, actor: req.user._id });
+        if (changed || deadlineNotified) {
             await task.save();
         }
     }
@@ -471,6 +616,17 @@ router.put('/tasks/:id/status', protect, asyncHandler(async (req, res) => {
                     task: task._id,
                     stage: STAGE.HR_DELIVERY
                 });
+                const hrUsers = await User.find({ role: 'hr' }).select('name email role');
+                for (const hrUser of hrUsers) {
+                    if (!hrUser?.email) continue;
+                    enqueueEmail(() => trySendTaskStageEmail({
+                        email: hrUser.email,
+                        name: hrUser.name || hrUser.email,
+                        roleLabel: 'HR',
+                        taskTitle: task.title,
+                        message: `Manager has submitted project ${task.title} for HR review`
+                    }));
+                }
                 return saveAndRespond();
             }
 
@@ -581,6 +737,86 @@ router.put('/tasks/:id/status', protect, asyncHandler(async (req, res) => {
                         stage: STAGE.COMPLETED
                     });
                 }
+                const completionRecipients = new Set();
+                if (task.manager) completionRecipients.add(task.manager.toString());
+                const stageUsers = [
+                    task.stageAssignments?.designer?.user,
+                    task.stageAssignments?.developer?.user,
+                    task.stageAssignments?.tester?.user
+                ].filter(Boolean);
+                stageUsers.forEach(userId => completionRecipients.add(userId.toString()));
+                const hrUsers = await User.find({ role: 'hr' }).select('_id name email role');
+                hrUsers.forEach(user => completionRecipients.add(user._id.toString()));
+
+                const completionList = Array.from(completionRecipients);
+                const completionMessage = `Project ${task.title} has been completed.`;
+                await notifyUsers({
+                    recipients: completionList,
+                    message: completionMessage,
+                    task: task._id,
+                    stage: STAGE.COMPLETED
+                });
+
+                const completionUsers = await User.find({ _id: { $in: completionList } }).select('name email role');
+                for (const user of completionUsers) {
+                    if (!user?.email) continue;
+                    enqueueEmail(() => trySendTaskStageEmail({
+                        email: user.email,
+                        name: user.name || user.email,
+                        roleLabel: STAGE_ROLE_LABELS[user.role] || user.role || 'User',
+                        taskTitle: task.title,
+                        message: completionMessage
+                    }));
+                }
+                return saveAndRespond();
+            }
+
+            if (['end-request', 'end', 'forfeit', 'cancel'].includes(normalizedAction)) {
+                if (task.status !== STATUS.AWAITING_CLIENT_REVIEW) {
+                    res.status(400);
+                    throw new Error('Task is not ready to be ended by client');
+                }
+                task.assignedTo = null;
+                setTaskState(task, {
+                    status: STATUS.CANCELLED,
+                    stage: STAGE.CANCELLED,
+                    note: 'Client ended the request',
+                    actor: req.user._id
+                });
+
+                const endMessage = `Client cancelled request for project ${task.title}.`;
+                await notifyRoles({
+                    roles: ['hr'],
+                    message: endMessage,
+                    task: task._id,
+                    stage: STAGE.CANCELLED
+                });
+                if (task.manager) {
+                    await notifyUsers({
+                        recipients: [task.manager],
+                        message: endMessage,
+                        task: task._id,
+                        stage: STAGE.CANCELLED
+                    });
+                }
+
+                const endRecipients = new Set();
+                if (task.manager) endRecipients.add(task.manager.toString());
+                const hrUsers = await User.find({ role: 'hr' }).select('_id name email role');
+                hrUsers.forEach(user => endRecipients.add(user._id.toString()));
+
+                const endUsers = await User.find({ _id: { $in: Array.from(endRecipients) } }).select('name email role');
+                for (const user of endUsers) {
+                    if (!user?.email) continue;
+                    enqueueEmail(() => trySendTaskStageEmail({
+                        email: user.email,
+                        name: user.name || user.email,
+                        roleLabel: STAGE_ROLE_LABELS[user.role] || user.role || 'User',
+                        taskTitle: task.title,
+                        message: endMessage
+                    }));
+                }
+
                 return saveAndRespond();
             }
 
@@ -612,14 +848,28 @@ router.put('/tasks/:id/status', protect, asyncHandler(async (req, res) => {
                     stage: STAGE.CHANGES_REQUESTED,
                     meta: { comment }
                 });
-                if (task.manager) {
-                    await notifyUsers({
-                        recipients: [task.manager],
-                        message: `Client requested revisions for project ${task.title}`,
-                        task: task._id,
-                        stage: STAGE.CHANGES_REQUESTED,
-                        meta: { comment }
-                    });
+                const issueRecipients = new Set();
+                const hrUsers = await User.find({ role: 'hr' }).select('_id name email role');
+                hrUsers.forEach(user => issueRecipients.add(user._id.toString()));
+                const issueList = Array.from(issueRecipients);
+                const issueMessage = `Issue detected: Client requested changes for task ${task.title}.`;
+                await notifyUsers({
+                    recipients: issueList,
+                    message: issueMessage,
+                    task: task._id,
+                    stage: STAGE.CHANGES_REQUESTED,
+                    meta: { comment }
+                });
+                const issueUsers = await User.find({ _id: { $in: issueList } }).select('name email role');
+                for (const user of issueUsers) {
+                    if (!user?.email) continue;
+                    enqueueEmail(() => trySendTaskStageEmail({
+                        email: user.email,
+                        name: user.name || user.email,
+                        roleLabel: STAGE_ROLE_LABELS[user.role] || user.role || 'User',
+                        taskTitle: task.title,
+                        message: issueMessage
+                    }));
                 }
                 task.markModified('changeRequests');
                 return saveAndRespond();
@@ -627,6 +877,191 @@ router.put('/tasks/:id/status', protect, asyncHandler(async (req, res) => {
 
             res.status(400);
             throw new Error('Unknown client action');
+        }
+        case 'tester': {
+            if (!task.stageAssignments?.tester?.user || task.stageAssignments.tester.user.toString() !== req.user._id.toString()) {
+                res.status(403);
+                throw new Error('You are not assigned as the tester for this project');
+            }
+
+            if (task.currentStage !== STAGE.TESTING) {
+                res.status(400);
+                throw new Error('Testing stage is not active');
+            }
+
+            if (!normalizedAction) {
+                res.status(400);
+                throw new Error('Specify an action for tester workflow');
+            }
+
+            const testerAssignment = task.stageAssignments.tester;
+            const developerAssignment = task.stageAssignments.developer;
+
+            if (['approve', 'approved', 'complete', 'completed'].includes(normalizedAction)) {
+                testerAssignment.status = 'submitted';
+                testerAssignment.submittedAt = new Date();
+                const latestTestingAttachment = (task.attachments || []).slice().reverse().find(item => item && item.stage === 'testing');
+                if (latestTestingAttachment?._id) {
+                    testerAssignment.submissionAttachmentId = latestTestingAttachment._id;
+                }
+                task.assignedTo = task.manager || null;
+                setTaskState(task, {
+                    status: STATUS.TESTING_SUBMITTED,
+                    stage: STAGE.MANAGER_FINAL_REVIEW,
+                    note: 'Tester approved the task; manager final review pending',
+                    actor: req.user._id
+                });
+                task.markModified('stageAssignments');
+
+                const message = 'Task has been approved by Tester and is ready for final review.';
+                if (task.manager) {
+                    await notifyUsers({
+                        recipients: [task.manager],
+                        message,
+                        task: task._id,
+                        stage: STAGE.MANAGER_FINAL_REVIEW,
+                        meta: { developerAttachmentId: developerAssignment?.submissionAttachmentId || null }
+                    });
+                }
+                await notifyRoles({
+                    roles: ['hr'],
+                    message,
+                    task: task._id,
+                    stage: STAGE.MANAGER_FINAL_REVIEW,
+                    meta: { developerAttachmentId: developerAssignment?.submissionAttachmentId || null }
+                });
+                if (task.createdByRole === 'client' && task.createdBy) {
+                    await notifyUsers({
+                        recipients: [task.createdBy],
+                        message,
+                        task: task._id,
+                        stage: STAGE.MANAGER_FINAL_REVIEW,
+                        meta: { developerAttachmentId: developerAssignment?.submissionAttachmentId || null }
+                    });
+                }
+
+                if (task.manager) {
+                    const managerUser = await User.findById(task.manager).select('name email role');
+                    if (managerUser?.email) {
+                        enqueueEmail(() => trySendTaskStageEmail({
+                            email: managerUser.email,
+                            name: managerUser.name || managerUser.email,
+                            roleLabel: 'Manager',
+                            taskTitle: task.title,
+                            message
+                        }));
+                    }
+                }
+
+                const hrUsers = await User.find({ role: 'hr' }).select('name email');
+                for (const hrUser of hrUsers) {
+                    if (hrUser?.email) {
+                        enqueueEmail(() => trySendTaskStageEmail({
+                            email: hrUser.email,
+                            name: hrUser.name || hrUser.email,
+                            roleLabel: 'HR',
+                            taskTitle: task.title,
+                            message
+                        }));
+                    }
+                }
+
+                if (task.createdByRole === 'client' && task.createdBy) {
+                    const clientUser = await User.findById(task.createdBy).select('name email role');
+                    if (clientUser?.email) {
+                        enqueueEmail(() => trySendTaskStageEmail({
+                            email: clientUser.email,
+                            name: clientUser.name || clientUser.email,
+                            roleLabel: 'Client',
+                            taskTitle: task.title,
+                            message
+                        }));
+                    }
+                }
+
+                return saveAndRespond();
+            }
+
+            if (['request-changes', 'changes', 'revisions'].includes(normalizedAction)) {
+                const comment = (req.body.comment || '').toString().trim();
+                if (!comment) {
+                    res.status(400);
+                    throw new Error('Provide feedback before requesting changes');
+                }
+
+                if (!developerAssignment?.user) {
+                    res.status(400);
+                    throw new Error('Developer assignment is missing for this task');
+                }
+
+                task.changeRequests.push({
+                    comment,
+                    createdBy: req.user._id
+                });
+                task.assignedTo = developerAssignment.user;
+                task.stageAssignments.developer.status = 'in_progress';
+                task.stageAssignments.developer.submittedAt = null;
+                task.stageAssignments.developer.submissionAttachmentId = null;
+                testerAssignment.status = 'revisions';
+                testerAssignment.submittedAt = null;
+                testerAssignment.submissionAttachmentId = null;
+                setTaskState(task, {
+                    status: STATUS.CHANGES_REQUESTED,
+                    stage: STAGE.DEVELOPMENT,
+                    note: comment,
+                    actor: req.user._id
+                });
+                task.markModified('stageAssignments');
+                task.markModified('changeRequests');
+
+                const developerUser = await User.findById(developerAssignment.user).select('name email role');
+                await notifyUsers({
+                    recipients: developerUser ? [developerUser._id] : [],
+                    message: 'Tester has requested changes. Please review the feedback and update the task.',
+                    task: task._id,
+                    stage: STAGE.DEVELOPMENT,
+                    meta: { comment }
+                });
+                if (developerUser?.email) {
+                    enqueueEmail(() => trySendTaskStageEmail({
+                        email: developerUser.email,
+                        name: developerUser.name || developerUser.email,
+                        roleLabel: 'Developer',
+                        taskTitle: task.title,
+                        message: 'Tester has requested changes. Please review the feedback and update the task.'
+                    }));
+                }
+
+                const issueRecipients = new Set();
+                if (task.manager) issueRecipients.add(task.manager.toString());
+                const hrUsers = await User.find({ role: 'hr' }).select('_id name email role');
+                hrUsers.forEach(user => issueRecipients.add(user._id.toString()));
+                const issueList = Array.from(issueRecipients);
+                const issueMessage = `Issue detected: Tester requested changes for task ${task.title}.`;
+                await notifyUsers({
+                    recipients: issueList,
+                    message: issueMessage,
+                    task: task._id,
+                    stage: STAGE.DEVELOPMENT,
+                    meta: { comment }
+                });
+                const issueUsers = await User.find({ _id: { $in: issueList } }).select('name email role');
+                for (const user of issueUsers) {
+                    if (!user?.email) continue;
+                    enqueueEmail(() => trySendTaskStageEmail({
+                        email: user.email,
+                        name: user.name || user.email,
+                        roleLabel: STAGE_ROLE_LABELS[user.role] || user.role || 'User',
+                        taskTitle: task.title,
+                        message: issueMessage
+                    }));
+                }
+
+                return saveAndRespond();
+            }
+
+            res.status(400);
+            throw new Error('Unknown tester action');
         }
         default: {
             res.status(403);
@@ -720,6 +1155,28 @@ router.post('/tasks', protect, roleRequired('client'), upload.array('attachments
         stage: STAGE.CLIENT_REQUEST
     });
 
+    const hrUsers = await User.find({ role: 'hr' }).select('name email role');
+    for (const hrUser of hrUsers) {
+        if (!hrUser?.email) continue;
+        enqueueEmail(() => trySendTaskStageEmail({
+            email: hrUser.email,
+            name: hrUser.name || hrUser.email,
+            roleLabel: 'HR',
+            taskTitle: task.title,
+            message: `New project request ${task.title} submitted by ${req.user.name || req.user.email}`
+        }));
+    }
+
+    if (req.user?.email) {
+        enqueueEmail(() => trySendTaskStageEmail({
+            email: req.user.email,
+            name: req.user.name || req.user.email,
+            roleLabel: 'Client',
+            taskTitle: task.title,
+            message: `Your request for ${task.title} has been submitted. HR will review it soon.`
+        }));
+    }
+
     res.status(201).json(task);
 }));
 
@@ -797,7 +1254,7 @@ router.post('/tasks/:id/attachments', protect, upload.single('file'), asyncHandl
         fileEntry.stage = 'design';
         task.attachments.push(fileEntry);
         const attachmentId = task.attachments[task.attachments.length - 1]._id;
-        task.stageAssignments.designer.status = 'completed';
+        task.stageAssignments.designer.status = 'submitted';
         task.stageAssignments.designer.submittedAt = timestamp;
         task.stageAssignments.designer.submissionAttachmentId = attachmentId;
         task.stageAssignments.developer.status = 'in_progress';
@@ -819,13 +1276,13 @@ router.post('/tasks/:id/attachments', protect, upload.single('file'), asyncHandl
             stage: STAGE.DEVELOPMENT
         });
         if (developer?.email) {
-            await trySendTaskStageEmail({
+            enqueueEmail(() => trySendTaskStageEmail({
                 email: developer.email,
                 name: developer.name || developer.email,
                 roleLabel: 'Developer',
                 taskTitle: task.title,
                 message: 'Designer has completed the task. It is now your turn to proceed.'
-            });
+            }));
         }
     } else if (role === 'developer') {
         if (!task.stageAssignments.developer.user || task.stageAssignments.developer.user.toString() !== req.user._id.toString()) {
@@ -845,7 +1302,7 @@ router.post('/tasks/:id/attachments', protect, upload.single('file'), asyncHandl
         fileEntry.stage = 'development';
         task.attachments.push(fileEntry);
         const attachmentId = task.attachments[task.attachments.length - 1]._id;
-        task.stageAssignments.developer.status = 'completed';
+        task.stageAssignments.developer.status = 'submitted';
         task.stageAssignments.developer.submittedAt = timestamp;
         task.stageAssignments.developer.submissionAttachmentId = attachmentId;
         task.stageAssignments.tester.status = 'in_progress';
@@ -867,13 +1324,13 @@ router.post('/tasks/:id/attachments', protect, upload.single('file'), asyncHandl
             stage: STAGE.TESTING
         });
         if (tester?.email) {
-            await trySendTaskStageEmail({
+            enqueueEmail(() => trySendTaskStageEmail({
                 email: tester.email,
                 name: tester.name || tester.email,
                 roleLabel: 'Tester',
                 taskTitle: task.title,
                 message: 'Developer has completed the task. Testing phase is now active.'
-            });
+            }));
         }
     } else if (role === 'tester') {
         if (!task.stageAssignments.tester.user || task.stageAssignments.tester.user.toString() !== req.user._id.toString()) {
@@ -887,36 +1344,6 @@ router.post('/tasks/:id/attachments', protect, upload.single('file'), asyncHandl
         await applyDelayCheck({ task, actor: req.user._id });
         fileEntry.stage = 'testing';
         task.attachments.push(fileEntry);
-        const attachmentId = task.attachments[task.attachments.length - 1]._id;
-        task.stageAssignments.tester.status = 'completed';
-        task.stageAssignments.tester.submittedAt = timestamp;
-        task.stageAssignments.tester.submissionAttachmentId = attachmentId;
-        task.assignedTo = task.manager || null;
-        setTaskState(task, {
-            status: STATUS.TESTING_SUBMITTED,
-            stage: STAGE.MANAGER_FINAL_REVIEW,
-            note: 'Tester completed the stage; manager final review pending',
-            actor: req.user._id
-        });
-        task.markModified('stageAssignments');
-        await notifyUsers({
-            recipients: task.manager ? [task.manager] : [],
-            message: 'Testing completed. Task is ready for final review.',
-            task: task._id,
-            stage: STAGE.MANAGER_FINAL_REVIEW
-        });
-        if (task.manager) {
-            const managerUser = await User.findById(task.manager).select('name email role');
-            if (managerUser?.email) {
-                await trySendTaskStageEmail({
-                    email: managerUser.email,
-                    name: managerUser.name || managerUser.email,
-                    roleLabel: 'Manager',
-                    taskTitle: task.title,
-                    message: 'Testing completed. Task is ready for final review.'
-                });
-            }
-        }
     } else if (role === 'client') {
         fileEntry.stage = 'client-feedback';
         task.attachments.push(fileEntry);

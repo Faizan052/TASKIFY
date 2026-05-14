@@ -519,6 +519,127 @@ const sendTaskStageEmail = async ({ email, userName = 'Team member', roleLabel =
     }
 };
 
+const sendAccountApprovalEmail = async ({ email, userName = 'User' }) => {
+    const transporter = createTransporter();
+
+    if (!transporter) {
+        logDev(`📧 ACCOUNT APPROVAL EMAIL (Dev): ${email}`);
+        return { success: true };
+    }
+
+    const mailOptions = {
+        from: `"TASKIFY" <${process.env.SMTP_USER}>`,
+        to: email,
+        subject: 'TASKIFY - Your Account is Approved ✅',
+        html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                    .header { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+                    .content { background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; }
+                    .card { background: white; border-radius: 10px; padding: 20px; margin: 20px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+                    .footer { text-align: center; margin-top: 20px; color: #6b7280; font-size: 14px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1 style="margin: 0; font-size: 36px;">Welcome to TASKIFY</h1>
+                        <p style="margin: 8px 0 0 0;">Your account is now active</p>
+                    </div>
+                    <div class="content">
+                        <h2>Hello ${userName}!</h2>
+                        <div class="card">
+                            <p>Congratulations! Your registration has been approved by HR.</p>
+                            <p>You can now log in to your TASKIFY dashboard and start collaborating.</p>
+                        </div>
+                        <div style="text-align: center; margin: 24px 0;">
+                            <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}" style="display: inline-block; padding: 12px 24px; background: #22c55e; color: white; text-decoration: none; border-radius: 8px;">Open Dashboard</a>
+                        </div>
+                        <div class="footer">
+                            <p>Best regards,<br><strong>TASKIFY Team</strong></p>
+                            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+                            <p style="font-size: 12px;">This is an automated email. Please do not reply to this message.</p>
+                        </div>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `
+    };
+
+    try {
+        const info = await transporter.sendMail(mailOptions);
+        logDev(`✅ Account approval email sent to ${email}`);
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        console.error('❌ Error sending account approval email:', error);
+        return { success: false };
+    }
+};
+
+const sendAccountRejectionEmail = async ({ email, userName = 'User', reason = '' }) => {
+    const transporter = createTransporter();
+
+    if (!transporter) {
+        logDev(`📧 ACCOUNT REJECTION EMAIL (Dev): ${email}`);
+        return { success: true };
+    }
+
+    const mailOptions = {
+        from: `"TASKIFY" <${process.env.SMTP_USER}>`,
+        to: email,
+        subject: 'TASKIFY - Registration Update',
+        html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                    .header { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+                    .content { background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; }
+                    .card { background: white; border-radius: 10px; padding: 20px; margin: 20px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+                    .footer { text-align: center; margin-top: 20px; color: #6b7280; font-size: 14px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1 style="margin: 0; font-size: 32px;">Registration Update</h1>
+                    </div>
+                    <div class="content">
+                        <h2>Hello ${userName},</h2>
+                        <div class="card">
+                            <p>We are sorry to inform you that your registration was not approved at this time.</p>
+                            ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ''}
+                            <p>You will not be able to log in with this account. If you believe this is a mistake, please contact HR for assistance.</p>
+                        </div>
+                        <div class="footer">
+                            <p>Best regards,<br><strong>TASKIFY Team</strong></p>
+                            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+                            <p style="font-size: 12px;">This is an automated email. Please do not reply to this message.</p>
+                        </div>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `
+    };
+
+    try {
+        const info = await transporter.sendMail(mailOptions);
+        logDev(`✅ Account rejection email sent to ${email}`);
+        return { success: true, messageId: info.messageId };
+    } catch (error) {
+        console.error('❌ Error sending account rejection email:', error);
+        return { success: false };
+    }
+};
+
 module.exports = {
     generateOTP,
     sendOTPEmail,
@@ -526,5 +647,7 @@ module.exports = {
     sendPasswordResetOTP,
     sendPasswordChangedEmail,
     sendNewPasswordEmail,
-    sendTaskStageEmail
+    sendTaskStageEmail,
+    sendAccountApprovalEmail,
+    sendAccountRejectionEmail
 };

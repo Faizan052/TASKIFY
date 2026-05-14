@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useCallback, useRef } from 'react'
 import '../styles/hr-progress.css'
 
 const palette = {
@@ -91,7 +91,7 @@ const DonutChart = ({ successRatio = 0, failureRatio = 0 }) => {
 	)
 }
 
-export default function UserProgressDashboard({
+function UserProgressDashboard({
 	report,
 	selectedTeamId,
 	selectedUserId,
@@ -101,7 +101,27 @@ export default function UserProgressDashboard({
 	detailView,
 	loadingDetail
 }) {
+	const exportRef = useRef(null)
 	const users = report?.users || []
+		const handleExportPdf = useCallback(() => {
+			const node = exportRef.current
+			if (!node) return
+			const clone = node.cloneNode(true)
+			clone.querySelectorAll('[data-export-ignore]')
+				.forEach((el) => el.remove())
+			const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+				.map((el) => el.outerHTML)
+				.join('\n')
+			const win = window.open('', '_blank')
+			if (!win) return
+			win.document.open()
+			win.document.write(`<!DOCTYPE html><html><head><title>User Progress Report</title>${styles}
+	<style>body{margin:24px;font-family:Arial,sans-serif;background:#fff;} .dashboard-section{box-shadow:none;}</style>
+	</head><body>${clone.outerHTML}</body></html>`)
+			win.document.close()
+			win.focus()
+			setTimeout(() => win.print(), 300)
+		}, [])
 	const teams = report?.teams || []
 	const summary = report?.summary || {}
 	const filterUsers = report?.filters?.users || []
@@ -114,7 +134,7 @@ export default function UserProgressDashboard({
 		: 0
 
 	return (
-		<div className="dashboard-section hrup-wrap">
+		<div className="dashboard-section hrup-wrap" ref={exportRef}>
 			<div className="hrup-hero">
 				<div>
 					<p className="hrup-kicker">HR Analytics</p>
@@ -125,6 +145,9 @@ export default function UserProgressDashboard({
 					<span>Completion</span>
 					<strong>{completionRate}%</strong>
 				</div>
+				<button className="btn small btn-outline" onClick={handleExportPdf} data-export-ignore>
+					Export as PDF
+				</button>
 			</div>
 
 			<div className="hrup-stat-grid">
@@ -256,3 +279,5 @@ export default function UserProgressDashboard({
 		</div>
 	)
 }
+
+export default React.memo(UserProgressDashboard)

@@ -136,6 +136,11 @@ app.get('/', (req, res) => {
 
 // Error handler
 app.use((err, req, res, _next) => {
+    if (err) {
+        const name = err.name || 'Error';
+        const url = req.originalUrl || req.url || '';
+        console.error(`[${name}] ${req.method} ${url} -> ${err.message}`);
+    }
     if (err && err.code === 'LIMIT_FILE_SIZE') {
         res.status(413).json({
             message: 'File is too large. Maximum upload size is 500 MB.'

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 
@@ -14,6 +15,7 @@ const STATUS = {
     AWAITING_CLIENT_REVIEW: 'Awaiting Client Review',
     CHANGES_REQUESTED: 'Changes Requested',
     COMPLETED: 'Completed',
+    CANCELLED: 'Cancelled',
     DELAYED: 'Delayed'
 };
 
@@ -30,6 +32,7 @@ const STAGE = {
     HR_DELIVERY: 'hr_delivery',
     CLIENT_REVIEW: 'client_review',
     COMPLETED: 'completed',
+    CANCELLED: 'cancelled',
     CHANGES_REQUESTED: 'changes_requested'
 };
 
@@ -56,11 +59,36 @@ const setTaskState = (task, { status, stage, note, actor }) => {
     pushHistory(task, { stage: stage || task.currentStage, status: status || task.status, note, actor });
 };
 
+const OBJECT_ID_PATTERN = /[a-f0-9]{24}/i;
+
+const isObjectIdValue = (value) => {
+    if (!value || typeof value !== 'object') return false;
+    if (value._bsontype === 'ObjectID' || value._bsontype === 'ObjectId') return true;
+    return mongoose.Types.ObjectId.isValid(value);
+};
+
+const normalizeRecipient = (recipient) => {
+    if (!recipient) return null;
+    if (typeof recipient === 'string') {
+        const trimmed = recipient.trim();
+        if (mongoose.Types.ObjectId.isValid(trimmed)) return trimmed;
+        const match = trimmed.match(OBJECT_ID_PATTERN);
+        if (match && mongoose.Types.ObjectId.isValid(match[0])) return match[0];
+        return null;
+    }
+    if (isObjectIdValue(recipient)) return recipient.toString();
+    if (recipient._id) return normalizeRecipient(recipient._id);
+    if (recipient.id) return normalizeRecipient(recipient.id);
+    if (typeof recipient.toString === 'function') return normalizeRecipient(recipient.toString());
+    return null;
+};
+
 const notifyUsers = async ({ recipients = [], message, task = null, stage = '', meta = {} }) => {
     if (!Array.isArray(recipients) || !recipients.length || !message) {
         return;
     }
     const docs = recipients
+        .map(normalizeRecipient)
         .filter(Boolean)
         .map(recipient => ({
             recipient,

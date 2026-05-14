@@ -98,6 +98,7 @@ const taskSchema = new mongoose.Schema({
             'Awaiting Client Review',
             'Changes Requested',
             'Completed',
+            'Cancelled',
             'Delayed'
         ],
         default: 'Client Requested'
@@ -117,6 +118,7 @@ const taskSchema = new mongoose.Schema({
             'hr_delivery',
             'client_review',
             'completed',
+            'cancelled',
             'changes_requested'
         ],
         default: 'client_request'
@@ -152,6 +154,11 @@ const taskSchema = new mongoose.Schema({
             type: Date,
             default: null
         }
+    },
+    clientReviewOrigin: {
+        type: String,
+        enum: ['manager_reject', 'hr_delivery', null],
+        default: null
     },
     stageAssignments: {
         designer: {

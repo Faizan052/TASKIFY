@@ -450,8 +450,10 @@ export default function AdminDashboard(){
 
 			default: {
 				const completedTasks = tasks?.filter(t => t.status === 'Completed').length || 0
-				const activeTasks = tasks?.length - completedTasks || 0
-				const completionRate = tasks?.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0
+				const cancelledTasks = tasks?.filter(t => t.status === 'Cancelled').length || 0
+				const activeTasks = (tasks?.length || 0) - completedTasks - cancelledTasks
+				const totalForRate = (tasks?.length || 0) - cancelledTasks
+				const completionRate = totalForRate > 0 ? Math.round((completedTasks / totalForRate) * 100) : 0
 
 				return (
 					<div className="admin-view">

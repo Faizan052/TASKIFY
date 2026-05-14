@@ -66,13 +66,6 @@
 	background: linear-gradient(90deg, #4f46e5, #3b82f6);
 	opacity: 0.7;
 }
-
-.ma-task-card:hover {
-	transform: translateY(-1px);
-	border-color: #c7d2fe;
-	box-shadow: 0 10px 18px rgba(30, 41, 59, 0.09);
-}
-
 .ma-task-head {
 	align-items: center;
 	gap: var(--ma-space-2);
@@ -164,6 +157,7 @@
 	border: 1px solid #c7d2fe;
 	gap: 4px;
 	box-shadow: none;
+	box-sizing: border-box;
 }
 
 .ma-mode-btn {
@@ -177,6 +171,12 @@
 	background: transparent;
 	color: #4338ca;
 	transition: all 0.22s ease;
+	width: 100%;
+	text-align: center;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
 }
 
 .ma-mode-btn:hover {
@@ -335,6 +335,16 @@
 .ma-action-row {
 	margin-top: var(--ma-space-2);
 	gap: var(--ma-space-2);
+}
+.ma-decision-select {
+	margin-top: var(--ma-space-1);
+	display: grid;
+	gap: 6px;
+}
+.ma-decision-label {
+	font-size: 12px;
+	font-weight: 700;
+	color: #334155;
 }
 
 .ma-assign-btn {

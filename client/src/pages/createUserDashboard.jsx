@@ -22,6 +22,7 @@ const STATUS = {
 	AWAITING_CLIENT_REVIEW: 'Awaiting Client Review',
 	CHANGES_REQUESTED: 'Changes Requested',
 	COMPLETED: 'Completed',
+	CANCELLED: 'Cancelled',
 	DELAYED: 'Delayed'
 }
 
@@ -143,11 +144,17 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 		const taskList = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks])
 		const effectiveRole = role || (profile ? profile.role : '')
 		const assignmentKey = STAGE_KEY_BY_ROLE[effectiveRole] || null
+		const getAssignment = useCallback((task) => {
+			if (!assignmentKey) return null
+			if (!task || !task.stageAssignments) return null
+			return task.stageAssignments[assignmentKey] || null
+		}, [assignmentKey])
 		const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications])
 		const taskStats = useMemo(() => {
 			const total = taskList.length
 			let active = 0
 			let completed = 0
+			let cancelled = 0
 			let awaitingReview = 0
 			let inProgress = 0
 			let pending = 0
@@ -156,11 +163,14 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 			const recentTasks = taskList.slice(0, 5)
 
 			for (const task of taskList) {
-				if (task.status !== STATUS.COMPLETED && task.status !== STATUS.AWAITING_CLIENT_REVIEW) {
+				if (![STATUS.COMPLETED, STATUS.AWAITING_CLIENT_REVIEW, STATUS.CANCELLED].includes(task.status)) {
 					active += 1
 				}
 				if (task.status === STATUS.COMPLETED) {
 					completed += 1
+				}
+				if (task.status === STATUS.CANCELLED) {
+					cancelled += 1
 				}
 				const assignment = getAssignment(task)
 				if (assignment) {
@@ -168,6 +178,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 					if (assignment.status === 'in_progress') inProgress += 1
 					if (assignment.status === 'pending') pending += 1
 					if (assignment.status === 'submitted') submitted += 1
+					if (assignment.status === 'completed') submitted += 1
 					if (assignment.status === 'approved') approved += 1
 				}
 			}
@@ -179,6 +190,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 				total,
 				active,
 				completed,
+				cancelled,
 				awaitingReview,
 				inProgress,
 				pending,
@@ -271,12 +283,6 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 			return assignedId && assignedId === profile._id
 		}, [profile])
 
-		const getAssignment = useCallback((task) => {
-			if (!assignmentKey) return null
-			if (!task || !task.stageAssignments) return null
-			return task.stageAssignments[assignmentKey] || null
-		}, [assignmentKey])
-
 		const updateTask = useCallback((updatedTask) => {
 			setTasks((prev) => {
 				const list = Array.isArray(prev) ? prev : []
@@ -348,6 +354,31 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 				if (!comment || !comment.trim()) return
 				payload.comment = comment.trim()
 			}
+			if (action === 'end-request') {
+				const confirmEnd = window.confirm('Cancel this request? This will close the project.')
+				if (!confirmEnd) return
+			}
+			setMessage('')
+			setError(null)
+			setActingTaskId(taskId)
+			try {
+				const updated = await apiFetch(`/api/user/tasks/${taskId}/status`, { method: 'PUT', body: payload })
+				updateTask(updated)
+				setMessage(action === 'approve' ? 'Task approved' : action === 'end-request' ? 'Request cancelled' : 'Change request sent to HR')
+			} catch (err) {
+				setError(err.message)
+			} finally {
+				setActingTaskId('')
+			}
+		}, [setError, updateTask])
+
+		const handleTesterAction = useCallback(async (taskId, action) => {
+			const payload = { action }
+			if (action === 'request-changes') {
+				const comment = window.prompt('Add feedback for the developer')
+				if (!comment || !comment.trim()) return
+				payload.comment = comment.trim()
+			}
 			setMessage('')
 			setError(null)
 			setActingTaskId(taskId)
@@ -402,7 +433,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 			if (!assignmentKey || !profile) return []
 			return taskList.filter((task) => {
 				const assignment = getAssignment(task)
-				return assignmentBelongsToUser(assignment) && assignment.status === 'submitted'
+				return assignmentBelongsToUser(assignment) && ['submitted', 'completed'].includes(assignment.status)
 			})
 		}, [assignmentBelongsToUser, assignmentKey, getAssignment, profile, taskList])
 
@@ -445,6 +476,11 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 			[taskList]
 		)
 
+		const clientCancelled = useMemo(
+			() => taskList.filter((task) => task.status === STATUS.CANCELLED),
+			[taskList]
+		)
+
 		const clientAllTasks = useMemo(() => taskList.slice(), [taskList])
 
 		const renderAttachmentList = useCallback((task) => {
@@ -457,7 +493,10 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 					if (!file || !file.stage) return false
 					if (file.stage === 'hr') return true
 					if (file.stage === 'testing') {
-						return [STATUS.AWAITING_CLIENT_REVIEW, STATUS.COMPLETED].includes(task.status)
+						return [STATUS.AWAITING_CLIENT_REVIEW, STATUS.COMPLETED, STATUS.CANCELLED].includes(task.status)
+					}
+					if (file.stage === 'development') {
+						return [STATUS.AWAITING_CLIENT_REVIEW, STATUS.COMPLETED, STATUS.CANCELLED].includes(task.status)
 					}
 					return false
 				})
@@ -537,6 +576,9 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 						{collection.map((task, index) => {
 							const assignment = getAssignment(task) || {}
 							const isUploading = uploadingTaskId === task._id
+							const isActing = actingTaskId === task._id
+							const isTester = effectiveRole === 'tester'
+							const canReview = isTester && ['in_progress', 'revisions', 'delayed'].includes(assignment.status)
 							const progress = uploadProgress[task._id]
 							return (
 								<div key={task._id} className="item-card task-card">
@@ -588,6 +630,9 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 									</div>
 									{allowUploadInSection ? (
 										<div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+											{isTester ? (
+												<span className="item-meta">Upload test report (optional)</span>
+											) : null}
 											<input
 												type="file"
 												onChange={(e) => {
@@ -601,6 +646,12 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 											/>
 											{assignment.submittedAt ? <span className="item-meta">Last submitted {formatDate(assignment.submittedAt, true)}</span> : null}
 											{isUploading && !progress ? <span className="item-meta">Uploading...</span> : null}
+										</div>
+									) : null}
+									{canReview ? (
+										<div style={{ marginTop: 12, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+											<button className="btn small" onClick={() => handleTesterAction(task._id, 'approve')} disabled={isActing}>{isActing ? 'Processing...' : 'Approve'}</button>
+											<button className="btn btn-outline small" onClick={() => handleTesterAction(task._id, 'request-changes')} disabled={isActing}>{isActing ? 'Processing...' : 'Request changes'}</button>
 										</div>
 									) : null}
 									{progress ? (
@@ -639,7 +690,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 					</div>
 				</div>
 			)
-		}, [getAssignment, handleUpload, renderAttachmentList, renderChangeRequests, uploadProgress, uploadingTaskId])
+		}, [actingTaskId, effectiveRole, getAssignment, handleTesterAction, handleUpload, renderAttachmentList, renderChangeRequests, uploadProgress, uploadingTaskId])
 
 		const renderClientTasks = useCallback(() => (
 			<>
@@ -762,6 +813,9 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 						<div className="items-list">
 							{clientAwaitingReview.map((task, index) => {
 								const isActing = actingTaskId === task._id
+								const reviewOrigin = task.clientReviewOrigin || 'hr_delivery'
+								const showApprove = reviewOrigin === 'hr_delivery'
+								const showEndRequest = reviewOrigin === 'manager_reject'
 								return (
 									<div key={task._id} className="item-card task-card">
 										<div className="task-card-head">
@@ -782,8 +836,13 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 											</div>
 										</div>
 										<div style={{ marginTop: 12, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-											<button className="btn small" onClick={() => handleClientAction(task._id, 'approve')} disabled={isActing}>{isActing ? 'Processing...' : 'Approve'}</button>
+											{showApprove ? (
+												<button className="btn small" onClick={() => handleClientAction(task._id, 'approve')} disabled={isActing}>{isActing ? 'Processing...' : 'Approve'}</button>
+											) : null}
 											<button className="btn btn-outline small" onClick={() => handleClientAction(task._id, 'request-changes')} disabled={isActing}>{isActing ? 'Processing...' : 'Request changes'}</button>
+											{showEndRequest ? (
+												<button className="btn btn-outline small danger-action" onClick={() => handleClientAction(task._id, 'end-request')} disabled={isActing}>{isActing ? 'Processing...' : 'End request'}</button>
+											) : null}
 										</div>
 										<details className="task-details" style={{ marginTop: 12 }}>
 											<summary>Stage progress</summary>
@@ -829,8 +888,37 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 						</div>
 					) : <div className="help">No completed projects yet.</div>}
 				</div>
+
+				<div className="dashboard-section">
+					<div className="dashboard-section-header">
+						<h2 className="dashboard-section-title">Cancelled Requests</h2>
+						<span className="info-badge">{clientCancelled.length} items</span>
+					</div>
+					{clientCancelled.length ? (
+						<div className="table-container">
+							<table className="data-table">
+								<thead>
+									<tr>
+										<th>Title</th>
+										<th>Cancelled</th>
+										<th>Manager</th>
+									</tr>
+								</thead>
+								<tbody>
+									{clientCancelled.map((task) => (
+										<tr key={task._id}>
+											<td>{task.title}</td>
+											<td>{formatDate(task.updatedAt || task.deadline, true)}</td>
+											<td>{formatPerson(task.manager)}</td>
+										</tr>
+									))}
+								</tbody>
+							</table>
+						</div>
+					) : <div className="help">No cancelled requests yet.</div>}
+				</div>
 			</>
-		), [actingTaskId, clientAllTasks, clientAwaitingReview, clientCompleted, clientInDelivery, clientQueued, handleClientAction, renderAttachmentList, renderChangeRequests, renderStageSnapshot])
+		), [actingTaskId, clientAllTasks, clientAwaitingReview, clientCancelled, clientCompleted, clientInDelivery, clientQueued, handleClientAction, renderAttachmentList, renderChangeRequests, renderStageSnapshot])
 
 		const renderRoleAssignments = useCallback(() => (
 			<>

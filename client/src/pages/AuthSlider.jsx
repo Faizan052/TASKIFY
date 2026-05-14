@@ -108,6 +108,7 @@ export default function AuthSlider() {
   const [loading, setLoading] = useState(false)
   const [loginError, setLoginError] = useState(null)
   const [registerError, setRegisterError] = useState(null)
+  const [registerMessage, setRegisterMessage] = useState(null)
   const [showForgotPassword, setShowForgotPassword] = useState(false)
   const MESSAGE_TIMEOUT_MS = 4500
 
@@ -127,6 +128,12 @@ export default function AuthSlider() {
     const timer = setTimeout(() => setRegisterError(null), MESSAGE_TIMEOUT_MS)
     return () => clearTimeout(timer)
   }, [registerError])
+
+  useEffect(() => {
+    if (!registerMessage) return
+    const timer = setTimeout(() => setRegisterMessage(null), MESSAGE_TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [registerMessage])
 
   // Cleanup navigation timer on unmount
   useEffect(() => {
@@ -244,6 +251,18 @@ export default function AuthSlider() {
         setLoading(false)
         return
       }
+
+      if (message === 'ACCOUNT_PENDING') {
+        setLoginError('Your account is pending HR approval. Please check back later.')
+        setLoading(false)
+        return
+      }
+
+      if (message === 'ACCOUNT_REJECTED') {
+        setLoginError('Your registration was rejected. You cannot log in with this account.')
+        setLoading(false)
+        return
+      }
       
       const shouldTryAdmin = message.includes('Invalid email or password') || 
                             message.includes('User not found')
@@ -331,12 +350,24 @@ export default function AuthSlider() {
             otp: otp.trim()
           }
         })
-
-        const loginData = await apiFetch('/api/user/login', {
-          method: 'POST',
-          body: { email: regEmail.trim(), password: regPassword }
-        })
-        completeLogin(loginData, loginData.role)
+        if (role === 'client') {
+          const loginData = await apiFetch('/api/user/login', {
+            method: 'POST',
+            body: { email: regEmail.trim(), password: regPassword }
+          })
+          completeLogin(loginData, loginData.role)
+          return
+        }
+        setRegisterMessage('Registration successful! Your request is now with HR. You will receive a confirmation message as soon as your account is approved.')
+        setRegStep(1)
+        setOtp('')
+        setName('')
+        setRegEmail('')
+        setRegPassword('')
+        setConfirmPassword('')
+        setRole('developer')
+        setSelectedCategories([])
+        setRegisterTouched({ name: false, email: false, password: false, confirmPassword: false, category: false })
       } catch (err) {
         setRegisterError(err.message || 'Registration failed. Please check your OTP.')
       } finally {
@@ -497,6 +528,9 @@ export default function AuthSlider() {
 
           {registerError && isRegisterMode && (
             <Message type="error">{registerError}</Message>
+          )}
+          {registerMessage && isRegisterMode && (
+            <Message type="success">{registerMessage}</Message>
           )}
 
           <form className="auth-form" onSubmit={submitRegister} autoComplete="off">

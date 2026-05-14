@@ -6,8 +6,10 @@ const User = require('../models/User');
 const Task = require('../models/Task');
 const { protect } = require('../middleware/auth');
 const { roleRequired } = require('../middleware/roles');
-const { STATUS, STAGE, setTaskState, notifyUsers, getActiveStageKey, hasHistoryNote, markTaskDelayed } = require('../utils/taskWorkflow');
+const { STATUS, STAGE, setTaskState, notifyUsers, getActiveStageKey, hasHistoryNote, markTaskDelayed, pushHistory } = require('../utils/taskWorkflow');
+const { trySendTaskStageEmail } = require('../utils/emailNotifications');
 const { buildPerformanceReport } = require('../utils/performanceReports');
+const { isValidObjectId } = require('../utils/validation');
 
 const normalizeId = (value) => {
     if (value === undefined || value === null || value === '') {
@@ -22,7 +24,10 @@ const collectManagerTeamData = async (managerId) => {
     const memberIds = new Set();
     teams.forEach(team => {
         team.members.forEach(member => {
-            memberIds.add(member.toString());
+            const memberId = member?.toString();
+            if (isValidObjectId(memberId)) {
+                memberIds.add(memberId);
+            }
         });
     });
     return { teams, teamIds, memberIds };
@@ -48,6 +53,121 @@ const STAGE_ROLE_LABELS = {
     tester: 'Tester'
 };
 
+const enqueueEmail = (handler) => {
+    Promise.resolve().then(handler).catch(() => {});
+};
+
+const DEADLINE_NOTICE_DAYS = 5;
+const DEADLINE_NOTICE_MS = DEADLINE_NOTICE_DAYS * 24 * 60 * 60 * 1000;
+
+const isDeadlineNear = (value) => {
+    if (!value) return false;
+    const due = new Date(value);
+    if (Number.isNaN(due.getTime())) return false;
+    const remainingMs = due.getTime() - Date.now();
+    return remainingMs > 0 && remainingMs <= DEADLINE_NOTICE_MS;
+};
+
+const OBJECT_ID_PATTERN = /[a-f0-9]{24}/i;
+
+const isObjectIdValue = (value) => {
+    if (!value || typeof value !== 'object') return false;
+    if (value._bsontype === 'ObjectID' || value._bsontype === 'ObjectId') return true;
+    return isValidObjectId(value);
+};
+
+const extractObjectId = (value) => {
+    if (!value) return null;
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (isValidObjectId(trimmed)) return trimmed;
+        const match = trimmed.match(OBJECT_ID_PATTERN);
+        if (match && isValidObjectId(match[0])) return match[0];
+        return null;
+    }
+    if (isObjectIdValue(value)) return value.toString();
+    if (value._id) return extractObjectId(value._id);
+    if (value.id) return extractObjectId(value.id);
+    if (typeof value.toString === 'function') return extractObjectId(value.toString());
+    return null;
+};
+
+const collectRecipientIds = ({ task, stageKey }) => {
+    const recipients = new Set();
+    const assignedId = extractObjectId(task.assignedTo);
+    const managerId = extractObjectId(task.manager);
+    if (assignedId) recipients.add(assignedId);
+    if (managerId) recipients.add(managerId);
+    if (stageKey) {
+        const stageUser = extractObjectId(task.stageAssignments?.[stageKey]?.user);
+        if (stageUser) recipients.add(stageUser);
+    }
+    return Array.from(recipients);
+};
+
+const notifyDeadlineApproaching = async ({ task, stageKey, deadline, actor, label }) => {
+    if (!deadline || !isDeadlineNear(deadline)) return false;
+    const noteKey = `deadline_notice:${label}:${stageKey || 'project'}:${DEADLINE_NOTICE_DAYS}`;
+    if (hasHistoryNote(task, noteKey)) return false;
+
+    const recipientIds = collectRecipientIds({ task, stageKey });
+    const hrUsers = await User.find({ role: 'hr' }).select('_id name email role');
+    hrUsers.forEach(user => recipientIds.push(user._id.toString()));
+    const uniqueRecipients = Array.from(new Set(recipientIds))
+        .map(extractObjectId)
+        .filter(Boolean);
+    const message = `${label} deadline is approaching in ${DEADLINE_NOTICE_DAYS} days for task ${task.title}.`;
+
+    await notifyUsers({
+        recipients: uniqueRecipients,
+        message,
+        task: task._id,
+        stage: task.currentStage,
+        meta: { deadline }
+    });
+
+    const users = await User.find({ _id: { $in: uniqueRecipients } }).select('name email role');
+    for (const user of users) {
+        if (!user?.email) continue;
+        enqueueEmail(() => trySendTaskStageEmail({
+            email: user.email,
+            name: user.name || user.email,
+            roleLabel: STAGE_ROLE_LABELS[user.role] || user.role || 'User',
+            taskTitle: task.title,
+            message
+        }));
+    }
+
+    pushHistory(task, { stage: task.currentStage, status: task.status, note: noteKey, actor });
+    task.markModified('history');
+    return true;
+};
+
+const applyDeadlineNotices = async ({ task, actor }) => {
+    let changed = false;
+    const stageKey = getActiveStageKey(task);
+    if (stageKey) {
+        const stageDeadline = task.stageAssignments?.[stageKey]?.deadline;
+        const stageChanged = await notifyDeadlineApproaching({
+            task,
+            stageKey,
+            deadline: stageDeadline,
+            actor,
+            label: 'Stage'
+        });
+        if (stageChanged) changed = true;
+    }
+    const projectChanged = await notifyDeadlineApproaching({
+        task,
+        stageKey: null,
+        deadline: task.deadline,
+        actor,
+        label: 'Project'
+    });
+    if (projectChanged) changed = true;
+    return changed;
+};
+
 const applyDelayCheck = async ({ task, actor }) => {
     const stageKey = getActiveStageKey(task);
     if (!stageKey) return false;
@@ -60,13 +180,33 @@ const applyDelayCheck = async ({ task, actor }) => {
     if (hasHistoryNote(task, noteKey)) return false;
 
     const updated = markTaskDelayed({ task, stageKey, actor });
-    if (updated && task.manager) {
+    if (updated) {
+        const recipientIds = collectRecipientIds({ task, stageKey });
+        const hrUsers = await User.find({ role: 'hr' }).select('_id name email role');
+        hrUsers.forEach(user => recipientIds.push(user._id.toString()));
+        const uniqueRecipients = Array.from(new Set(recipientIds))
+            .map(extractObjectId)
+            .filter(Boolean);
+        const message = `Issue detected: ${STAGE_ROLE_LABELS[stageKey]} stage is delayed for task ${task.title}.`;
+
         await notifyUsers({
-            recipients: [task.manager],
-            message: `Deadline exceeded for ${STAGE_ROLE_LABELS[stageKey]} on task ${task.title}.`,
+            recipients: uniqueRecipients,
+            message,
             task: task._id,
             stage: task.currentStage
         });
+
+        const users = await User.find({ _id: { $in: uniqueRecipients } }).select('name email role');
+        for (const user of users) {
+            if (!user?.email) continue;
+            enqueueEmail(() => trySendTaskStageEmail({
+                email: user.email,
+                name: user.name || user.email,
+                roleLabel: STAGE_ROLE_LABELS[user.role] || user.role || 'User',
+                taskTitle: task.title,
+                message
+            }));
+        }
     }
     return updated;
 };
@@ -188,8 +328,30 @@ router.post('/teams', protect, roleRequired('manager'), asyncHandler(async (req,
 
 // Manager lists their teams
 router.get('/teams', protect, roleRequired('manager'), asyncHandler(async (req, res) => {
-    const teams = await Team.find({ manager: req.user._id }).populate('members', 'name email role category');
-    res.json(teams);
+    const teams = await Team.find({ manager: req.user._id }).select('_id name members').lean();
+    const memberIds = new Set();
+
+    teams.forEach(team => {
+        const validIds = (team.members || [])
+            .map(member => member?.toString())
+            .filter(id => isValidObjectId(id));
+        team.members = validIds;
+        validIds.forEach(id => memberIds.add(id));
+    });
+
+    const users = memberIds.size
+        ? await User.find({ _id: { $in: Array.from(memberIds) } })
+            .select('_id name email role category categories')
+            .lean()
+        : [];
+
+    const userMap = new Map(users.map(user => [user._id.toString(), user]));
+    const hydratedTeams = teams.map(team => ({
+        ...team,
+        members: team.members.map(id => userMap.get(id)).filter(Boolean)
+    }));
+
+    res.json(hydratedTeams);
 }));
 
 // Manager adds a member (developer/designer/tester) to a team
@@ -287,12 +449,38 @@ router.put('/tasks/:id/decision', protect, roleRequired('manager'), asyncHandler
     } else {
         task.assignedTo = null;
         task.assignedTeam = null;
+        task.clientReviewOrigin = 'manager_reject';
         setTaskState(task, {
-            status: STATUS.CHANGES_REQUESTED,
-            stage: STAGE.HR_REVIEW,
+            status: STATUS.AWAITING_CLIENT_REVIEW,
+            stage: STAGE.CLIENT_REVIEW,
             note: `Manager rejected task: ${decisionComment}`,
             actor: req.user._id
         });
+
+        const clientRecipient = task.createdByModel === 'User'
+            ? await User.findById(task.createdBy).select('name email role')
+            : null;
+
+        if (clientRecipient) {
+            const clientMessage = `Manager rejected task ${task.title}. Please update and resubmit or forfeit. Reason: ${decisionComment || 'No reason provided.'}`;
+            await notifyUsers({
+                recipients: [clientRecipient._id],
+                message: clientMessage,
+                task: task._id,
+                stage: task.currentStage,
+                meta: { rejectedBy: 'manager' }
+            });
+
+            if (clientRecipient.email) {
+                enqueueEmail(() => trySendTaskStageEmail({
+                    email: clientRecipient.email,
+                    name: clientRecipient.name || clientRecipient.email,
+                    roleLabel: 'Client',
+                    taskTitle: task.title,
+                    message: clientMessage
+                }));
+            }
+        }
     }
 
     await task.save();
@@ -503,12 +691,25 @@ router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(a
             actor: req.user._id
         });
 
+        const teamRecipients = [designer, developer, tester].filter(Boolean);
+        const assignmentMessage = 'You have been assigned a task. Please check your dashboard.';
         await notifyUsers({
-            recipients: [designer._id],
-            message: `Manager assigned project ${task.title} to your team for design work`,
+            recipients: teamRecipients.map(member => member._id),
+            message: assignmentMessage,
             task: task._id,
             stage: STAGE.DESIGN
         });
+        for (const member of teamRecipients) {
+            if (member?.email) {
+                enqueueEmail(() => trySendTaskStageEmail({
+                    email: member.email,
+                    name: member.name || member.email,
+                    roleLabel: formatRoleLabel(member.role),
+                    taskTitle: task.title,
+                    message: assignmentMessage
+                }));
+            }
+        }
     } else {
         const directUser = await User.findById(normalizedUserId).select('_id name email role category categories');
         if (!directUser) {
@@ -618,12 +819,22 @@ router.put('/tasks/:id/assign', protect, roleRequired('manager'), asyncHandler(a
             });
         }
 
+        const directAssignmentMessage = 'You have been assigned a task. Please check your dashboard.';
         await notifyUsers({
             recipients: [directUser._id],
-            message: `Manager assigned project ${task.title} directly to you`,
+            message: directAssignmentMessage,
             task: task._id,
             stage: task.currentStage
         });
+        if (directUser?.email) {
+            enqueueEmail(() => trySendTaskStageEmail({
+                email: directUser.email,
+                name: directUser.name || directUser.email,
+                roleLabel: formatRoleLabel(directUser.role),
+                taskTitle: task.title,
+                message: directAssignmentMessage
+            }));
+        }
     }
 
     task.managerDecision = {
@@ -676,7 +887,8 @@ router.get('/tasks', protect, roleRequired('manager'), asyncHandler(async (req, 
     const unique = dedupeTasks(tasks);
     for (const task of unique) {
         const changed = await applyDelayCheck({ task, actor: req.user._id });
-        if (changed) {
+        const deadlineNotified = await applyDeadlineNotices({ task, actor: req.user._id });
+        if (changed || deadlineNotified) {
             await task.save();
         }
     }

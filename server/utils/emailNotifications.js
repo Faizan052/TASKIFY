@@ -1,4 +1,4 @@
-const { sendWelcomeEmail, sendNewPasswordEmail, sendTaskStageEmail } = require('./emailService');
+const { sendWelcomeEmail, sendNewPasswordEmail, sendTaskStageEmail, sendAccountApprovalEmail, sendAccountRejectionEmail } = require('./emailService');
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -32,8 +32,26 @@ const trySendTaskStageEmail = async ({ email, name, roleLabel, taskTitle, messag
     }
 };
 
+const trySendAccountApprovalEmail = async ({ email, name, errorMessage }) => {
+    try {
+        await sendAccountApprovalEmail({ email, userName: name });
+    } catch (error) {
+        logFailure(errorMessage || 'Failed to send account approval email:', error);
+    }
+};
+
+const trySendAccountRejectionEmail = async ({ email, name, reason, errorMessage }) => {
+    try {
+        await sendAccountRejectionEmail({ email, userName: name, reason });
+    } catch (error) {
+        logFailure(errorMessage || 'Failed to send account rejection email:', error);
+    }
+};
+
 module.exports = {
     trySendWelcomeEmail,
     trySendNewPasswordEmail,
-    trySendTaskStageEmail
+    trySendTaskStageEmail,
+    trySendAccountApprovalEmail,
+    trySendAccountRejectionEmail
 };
