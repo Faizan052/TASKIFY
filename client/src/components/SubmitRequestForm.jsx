@@ -53,8 +53,13 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 			return
 		}
 
-		if (!form.title || !form.description) {
-			setError('Please provide title and description before feasibility check')
+		if (!form.title) {
+			setError('Please provide title before feasibility check')
+			return
+		}
+
+		if (!files.length) {
+			setError('Please upload at least one attachment before feasibility check')
 			return
 		}
 
@@ -125,6 +130,11 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 
 		if (!aiApproved) {
 			setError('Please run feasibility check and ensure it is approved before submitting')
+			return
+		}
+
+		if (!files.length) {
+			setError('Please upload at least one attachment before submitting')
 			return
 		}
 
@@ -228,12 +238,11 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 
 				<div style={{ marginBottom: '20px' }}>
 					<label style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: '#1f2937', marginBottom: '8px' }}>
-						Description *
+						Description (optional)
 					</label>
 					<textarea
 						value={form.description}
 						onChange={e => handleChange('description', e.target.value)}
-						required
 						rows="5"
 						style={{ width: '100%', padding: '14px 16px', fontSize: '15px', border: '2px solid #e5e7eb', borderRadius: '10px', outline: 'none', fontFamily: 'inherit', resize: 'vertical' }}
 					/>
@@ -277,18 +286,19 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 
 				<div style={{ marginBottom: '24px' }}>
 					<label style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: '#1f2937', marginBottom: '8px' }}>
-						Attachments (optional)
+						Attachments (required)
 					</label>
 					<input
 						type="file"
 						multiple
 						onChange={handleFileChange}
 						accept=".zip,.rar,.pdf,.doc,.docx,.txt,.json,.xml,.png,.jpg,.jpeg,.css,.html,.htm,.js"
+						required
 						style={{ width: '100%', padding: '14px 16px', fontSize: '14px', border: '2px dashed #d1d5db', borderRadius: '10px', cursor: 'pointer', background: '#f9fafb' }}
 					/>
 				</div>
 
-				{form.deadline && form.title && form.description && (
+				{form.deadline && form.title && (
 					<div style={{ marginBottom: '24px' }}>
 						<button
 							type="button"

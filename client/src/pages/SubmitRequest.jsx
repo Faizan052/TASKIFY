@@ -19,6 +19,10 @@ export default function SubmitRequest(){
 
   const submit = async (e) => {
     e.preventDefault()
+    if (files.length === 0) {
+      setError('Please upload at least one attachment')
+      return
+    }
     setSubmitting(true); setError(null); setMessage('')
     try{
       const payload = new FormData()
@@ -49,9 +53,9 @@ export default function SubmitRequest(){
 
       <form className="form" onSubmit={submit}>
         <label>Title<input value={form.title} onChange={e=>handleChange('title', e.target.value)} required/></label>
-        <label>Description<input value={form.description} onChange={e=>handleChange('description', e.target.value)} required/></label>
+          <label>Description (optional)<input value={form.description} onChange={e=>handleChange('description', e.target.value)} /></label>
         <label>Desired deadline<input type="date" value={form.deadline} onChange={e=>handleChange('deadline', e.target.value)} required/></label>
-  <label>Attachments (optional)<input type="file" multiple onChange={handleFileChange} accept=".zip,.rar,.pdf,.doc,.docx,.json,.xml,.png,.jpg,.jpeg,.css,.html,.htm,.js,.map,.scss,.less,.txt"/></label>
+        <label>Attachments (required)<input type="file" multiple onChange={handleFileChange} accept=".zip,.rar,.pdf,.doc,.docx,.json,.xml,.png,.jpg,.jpeg,.css,.html,.htm,.js,.map,.scss,.less,.txt" required/></label>
         <div className="form-row"><button className="btn" disabled={submitting}>{submitting ? 'Submitting...' : 'Submit request'}</button></div>
       </form>
     </main>

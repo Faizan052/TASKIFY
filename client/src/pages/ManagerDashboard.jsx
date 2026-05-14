@@ -88,6 +88,43 @@ const getSlackStyle = (stageDeadline, projectDeadline) => {
 	return undefined
 }
 
+const ASSIGNMENT_DAY_MS = 1000 * 60 * 60 * 24
+
+const getStageWindowDays = (startValue, endValue, requireStart = false) => {
+	if (!endValue) return null
+	if (requireStart && !startValue) return null
+	const startDate = startValue ? new Date(startValue) : new Date()
+	const endDate = new Date(endValue)
+	if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return null
+	const diff = endDate.getTime() - startDate.getTime()
+	return Math.ceil(diff / ASSIGNMENT_DAY_MS)
+}
+
+const formatStageWindowDays = (startValue, endValue, requireStart = false) => {
+	const days = getStageWindowDays(startValue, endValue, requireStart)
+	if (days === null) return '—'
+	const absolute = Math.abs(days)
+	const unit = absolute === 1 ? 'day' : 'days'
+	if (days < 0) return `${absolute} ${unit} earlier`
+	return `${absolute} ${unit}`
+}
+
+const getTeamWindowText = (selection) => {
+	if (!selection) return '—'
+	const endValue = selection.testerDeadline || selection.developerDeadline || selection.designerDeadline
+	return formatStageWindowDays(null, endValue)
+}
+
+const getIndividualWindowText = (selection, user) => {
+	if (!selection || !user) return '—'
+	const deadlineValue = user.role === 'designer'
+		? selection.designerDeadline
+		: user.role === 'developer'
+			? selection.developerDeadline
+			: selection.testerDeadline
+	return formatStageWindowDays(null, deadlineValue)
+}
+
 export default function ManagerDashboard(){
 	const nav = useNavigate()
 	const [profile, setProfile] = useState(null)
@@ -1361,7 +1398,7 @@ export default function ManagerDashboard(){
 																			max={toDateTimeLocal(task.deadline)}
 																			onChange={e=>setAssignmentSelection(task._id, 'designerDeadline', e.target.value)}
 																		/>
-																		<span className="help" style={getSlackStyle(selection.designerDeadline, task.deadline)}>{formatSlackDays(selection.designerDeadline, task.deadline)}</span>
+																		<span className="help">{formatStageWindowDays(null, selection.designerDeadline)}</span>
 																	</label>
 																	<label className="ma-deadline-field">
 																		Developer deadline
@@ -1374,7 +1411,7 @@ export default function ManagerDashboard(){
 																			max={toDateTimeLocal(task.deadline)}
 																			onChange={e=>setAssignmentSelection(task._id, 'developerDeadline', e.target.value)}
 																		/>
-																		<span className="help" style={getSlackStyle(selection.developerDeadline, task.deadline)}>{formatSlackDays(selection.developerDeadline, task.deadline)}</span>
+																		<span className="help">{formatStageWindowDays(selection.designerDeadline, selection.developerDeadline, true)}</span>
 																	</label>
 																	<label className="ma-deadline-field">
 																		Tester deadline
@@ -1387,7 +1424,7 @@ export default function ManagerDashboard(){
 																			max={toDateTimeLocal(task.deadline)}
 																			onChange={e=>setAssignmentSelection(task._id, 'testerDeadline', e.target.value)}
 																		/>
-																		<span className="help" style={getSlackStyle(selection.testerDeadline, task.deadline)}>{formatSlackDays(selection.testerDeadline, task.deadline)}</span>
+																		<span className="help">{formatStageWindowDays(selection.developerDeadline, selection.testerDeadline, true)}</span>
 																	</label>
 																</>
 															) : (
@@ -1428,6 +1465,25 @@ export default function ManagerDashboard(){
 															<button className="btn small ma-assign-btn" onClick={()=>handleAssignTask(task)} disabled={isAssigning || (selection.mode === 'team' && missingRoles.length > 0)}>
 																{isAssigning ? 'Assigning...' : 'Assign Task'}
 															</button>
+															<div
+																style={{
+																	minWidth: 190,
+																	padding: '10px 12px',
+																	borderRadius: 10,
+																	background: '#f8fafc',
+																	border: '1px solid #e2e8f0',
+																	fontSize: 12,
+																	lineHeight: 1.4
+																}}
+															>
+																<div style={{ fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>Deadline Summary</div>
+																<div style={{ color: '#475569' }}>Project: <strong>{formatRemainingDays(task.deadline)}</strong></div>
+																{selection.mode === 'team' ? (
+																	<div style={{ color: '#475569' }}>Team window: <strong>{getTeamWindowText(selection)}</strong></div>
+																) : (
+																	<div style={{ color: '#475569' }}>Individual window: <strong>{getIndividualWindowText(selection, selectedUser)}</strong></div>
+																)}
+															</div>
 														</div>
 													</div>
 												</>
