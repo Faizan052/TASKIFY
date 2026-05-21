@@ -982,7 +982,7 @@ router.put('/tasks/:id/status', protect, asyncHandler(async (req, res) => {
                 return saveAndRespond();
             }
 
-            if (['request-changes', 'changes', 'revisions'].includes(normalizedAction)) {
+            if (['request-changes', 'changes', 'revisions', 'reject', 'rejected', 'fail', 'failed'].includes(normalizedAction)) {
                 const comment = (req.body.comment || '').toString().trim();
                 if (!comment) {
                     res.status(400);
