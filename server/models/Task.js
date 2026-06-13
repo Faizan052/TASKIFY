@@ -97,6 +97,7 @@ const taskSchema = new mongoose.Schema({
             'Awaiting HR Review',
             'Awaiting Client Review',
             'Changes Requested',
+            'Manager Rejected',
             'Completed',
             'Cancelled',
             'Delayed'

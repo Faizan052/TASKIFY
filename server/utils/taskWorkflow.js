@@ -14,6 +14,7 @@ const STATUS = {
     AWAITING_HR_REVIEW: 'Awaiting HR Review',
     AWAITING_CLIENT_REVIEW: 'Awaiting Client Review',
     CHANGES_REQUESTED: 'Changes Requested',
+    MANAGER_REJECTED: 'Manager Rejected',
     COMPLETED: 'Completed',
     CANCELLED: 'Cancelled',
     DELAYED: 'Delayed'

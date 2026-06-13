@@ -14,12 +14,12 @@ const REQUEST_CATEGORIES = [
 	{ value: 'other', label: '📦 Other', icon: '📦' }
 ]
 
-export default function SubmitRequestForm({ onSuccess, onCancel }) {
+export default function SubmitRequestForm({ onSuccess, onCancel, editingTask }) {
 	const [form, setForm] = useState({
-		title: '',
-		description: '',
-		deadline: '',
-		category: ''
+		title: editingTask?.title || '',
+		description: editingTask?.description || '',
+		deadline: editingTask?.deadline ? new Date(editingTask.deadline).toISOString().split('T')[0] : '',
+		category: editingTask?.category || ''
 	})
 	const [files, setFiles] = useState([])
 	const [submitting, setSubmitting] = useState(false)
@@ -27,7 +27,7 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 	const [showLoadingSequence, setShowLoadingSequence] = useState(false)
 	const [error, setError] = useState(null)
 	const [aiAnalysis, setAiAnalysis] = useState(null)
-	const [aiApproved, setAiApproved] = useState(false)
+	const [aiApproved, setAiApproved] = useState(editingTask ? true : false)
 	const [showFeasibilityModal, setShowFeasibilityModal] = useState(false)
 
 	const resetFeasibility = () => {
@@ -128,7 +128,7 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 			return
 		}
 
-		if (!aiApproved) {
+		if (!editingTask && !aiApproved) {
 			setError('Please run feasibility check and ensure it is approved before submitting')
 			return
 		}
@@ -150,11 +150,21 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 
 			files.forEach(file => payload.append('attachments', file))
 
-			await apiFetch('/api/user/tasks', {
-				method: 'POST',
-				body: payload,
-				skipJson: true
-			})
+			if (editingTask) {
+				// Update existing task
+				await apiFetch(`/api/user/tasks/${editingTask._id}`, {
+					method: 'PUT',
+					body: payload,
+					skipJson: true
+				})
+			} else {
+				// Create new task
+				await apiFetch('/api/user/tasks', {
+					method: 'POST',
+					body: payload,
+					skipJson: true
+				})
+			}
 
 			if (onSuccess) onSuccess()
 		} catch (err) {
@@ -198,7 +208,7 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 		}}>
 			<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
 				<h2 style={{ margin: 0, fontSize: '28px', fontWeight: 800, color: '#1f2937' }}>
-					Submit New Request
+					{editingTask ? '✏️ Make Changes to Request' : '📝 Submit New Request'}
 				</h2>
 				{onCancel && (
 					<button onClick={onCancel} style={{ background: 'transparent', border: 'none', fontSize: '28px', cursor: 'pointer', lineHeight: 1 }}>
@@ -298,42 +308,48 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 					/>
 				</div>
 
-				{form.deadline && form.title && (
-					<div style={{ marginBottom: '24px' }}>
-						<button
-							type="button"
-							onClick={analyzeDocument}
-							disabled={analyzing}
-							style={{
-								width: '100%',
-								padding: '16px 18px',
-								background: analyzing ? '#6b7280' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-								color: '#fff',
-								border: 'none',
-								borderRadius: '12px',
-								fontSize: '15px',
-								fontWeight: 700,
-								cursor: analyzing ? 'not-allowed' : 'pointer',
-								boxShadow: analyzing ? 'none' : '0 10px 24px rgba(102, 126, 234, 0.30)',
-								transition: 'transform 0.25s ease, box-shadow 0.25s ease'
-							}}
-							onMouseEnter={(e) => {
-								if (!analyzing) {
-									e.currentTarget.style.transform = 'translateY(-2px)'
-									e.currentTarget.style.boxShadow = '0 14px 28px rgba(102, 126, 234, 0.38)'
-								}
-							}}
-							onMouseLeave={(e) => {
-								e.currentTarget.style.transform = 'translateY(0)'
-								e.currentTarget.style.boxShadow = analyzing ? 'none' : '0 10px 24px rgba(102, 126, 234, 0.30)'
-							}}
-						>
-							{analyzing ? 'Checking Feasibility...' : `✨ Check Feasibility${files.length ? ' (with attachment)' : ''}`}
-						</button>
-					</div>
-				)}
+{form.deadline && form.title && !editingTask && (
+				<div style={{ marginBottom: '24px' }}>
+					<button
+						type="button"
+						onClick={analyzeDocument}
+						disabled={analyzing}
+						style={{
+							width: '100%',
+							padding: '16px 18px',
+							background: analyzing ? '#6b7280' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+							color: '#fff',
+							border: 'none',
+							borderRadius: '12px',
+							fontSize: '15px',
+							fontWeight: 700,
+							cursor: analyzing ? 'not-allowed' : 'pointer',
+							boxShadow: analyzing ? 'none' : '0 10px 24px rgba(102, 126, 234, 0.30)',
+							transition: 'transform 0.25s ease, box-shadow 0.25s ease'
+						}}
+						onMouseEnter={(e) => {
+							if (!analyzing) {
+								e.currentTarget.style.transform = 'translateY(-2px)'
+								e.currentTarget.style.boxShadow = '0 14px 28px rgba(102, 126, 234, 0.38)'
+							}
+						}}
+						onMouseLeave={(e) => {
+							e.currentTarget.style.transform = 'translateY(0)'
+							e.currentTarget.style.boxShadow = analyzing ? 'none' : '0 10px 24px rgba(102, 126, 234, 0.30)'
+						}}
+					>
+						{analyzing ? 'Checking Feasibility...' : `✨ Check Feasibility${files.length ? ' (with attachment)' : ''}`}
+					</button>
+				</div>
+			)}
 
-				{aiApproved && (
+			{editingTask && (
+				<div style={{ marginBottom: '20px', padding: '16px', background: '#dbeafe', borderRadius: '12px', border: '2px solid #3b82f6', textAlign: 'center', fontWeight: 700, color: '#1e40af', animation: 'feasibilityFadeIn 0.35s ease' }}>
+					📝 Ready to Submit Changes
+				</div>
+			)}
+
+			{aiApproved && !editingTask && (
 					<div style={{ marginBottom: '20px', padding: '16px', background: '#d1fae5', borderRadius: '12px', border: '2px solid #10b981', textAlign: 'center', fontWeight: 700, color: '#065f46', animation: 'feasibilityFadeIn 0.35s ease' }}>
 						✅ Feasibility Approved — Ready to Submit
 					</div>
@@ -342,43 +358,43 @@ export default function SubmitRequestForm({ onSuccess, onCancel }) {
 				<div style={{ display: 'flex', gap: '12px', marginTop: '28px' }}>
 					<button
 						type="submit"
-						disabled={submitting || !aiApproved}
+					disabled={submitting || (!editingTask && !aiApproved)}
+					style={{
+						flex: 1,
+						padding: '18px',
+						background: (submitting || (!editingTask && !aiApproved)) ? '#6b7280' : '#059669',
+						color: '#fff',
+						border: 'none',
+						borderRadius: '12px',
+						fontSize: '17px',
+						fontWeight: 700,
+						cursor: (submitting || (!editingTask && !aiApproved)) ? 'not-allowed' : 'pointer'
+					}}
+				>
+					{submitting ? '⏳ Processing...' : editingTask ? '✏️ Submit Changes' : (aiApproved ? '🚀 Submit Request' : 'Run Feasibility Check First')}
+				</button>
+
+				{onCancel && (
+					<button
+						type="button"
+						onClick={onCancel}
 						style={{
-							flex: 1,
-							padding: '18px',
-							background: (submitting || !aiApproved) ? '#6b7280' : '#059669',
-							color: '#fff',
-							border: 'none',
-							borderRadius: '12px',
-							fontSize: '17px',
-							fontWeight: 700,
-							cursor: (submitting || !aiApproved) ? 'not-allowed' : 'pointer'
+							padding: '16px 32px',
+							background: 'transparent',
+							color: '#6b7280',
+							border: '2px solid #e5e7eb',
+							borderRadius: '10px',
+							fontSize: '15px',
+							fontWeight: 600,
+							cursor: 'pointer'
 						}}
 					>
-						{submitting ? '⏳ Submitting...' : (aiApproved ? '🚀 Submit Request' : 'Run Feasibility Check First')}
+						Cancel
 					</button>
-
-					{onCancel && (
-						<button
-							type="button"
-							onClick={onCancel}
-							style={{
-								padding: '16px 32px',
-								background: 'transparent',
-								color: '#6b7280',
-								border: '2px solid #e5e7eb',
-								borderRadius: '10px',
-								fontSize: '15px',
-								fontWeight: 600,
-								cursor: 'pointer'
-							}}
-						>
-							Cancel
-						</button>
-					)}
-				</div>
-			</form>
-		</div>
+				)}
+			</div>
+		</form>
+	</div>
 		
 		{/* Animated Loading Sequence */}
 		<FeasibilityLoadingSequence isVisible={showLoadingSequence} />

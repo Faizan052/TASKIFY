@@ -884,7 +884,10 @@ router.put('/tasks/:id/status', protect, asyncHandler(async (req, res) => {
                 throw new Error('You are not assigned as the tester for this project');
             }
 
-            if (task.currentStage !== STAGE.TESTING) {
+            // Allow tester to act if they are assigned and in testing stage or have a valid assignment status
+            const testerAssignment = task.stageAssignments.tester;
+            const validStatuses = ['pending', 'in_progress', 'revisions', 'delayed'];
+            if (task.currentStage !== STAGE.TESTING && !validStatuses.includes(testerAssignment.status)) {
                 res.status(400);
                 throw new Error('Testing stage is not active');
             }
@@ -894,7 +897,6 @@ router.put('/tasks/:id/status', protect, asyncHandler(async (req, res) => {
                 throw new Error('Specify an action for tester workflow');
             }
 
-            const testerAssignment = task.stageAssignments.tester;
             const developerAssignment = task.stageAssignments.developer;
 
             if (['approve', 'approved', 'complete', 'completed'].includes(normalizedAction)) {
@@ -1180,6 +1182,96 @@ router.post('/tasks', protect, roleRequired('client'), upload.array('attachments
     res.status(201).json(task);
 }));
 
+// Update rejected task with changes
+router.put('/tasks/:id', protect, roleRequired('client'), upload.array('attachments', 8), asyncHandler(async (req, res) => {
+    if (req.isAdmin) {
+        res.status(403);
+        throw new Error('Admin cannot access user routes');
+    }
+
+    const task = await Task.findById(req.params.id);
+    if (!task) {
+        res.status(404);
+        throw new Error('Task not found');
+    }
+
+    // Only allow client to edit their own tasks
+    if (task.createdBy.toString() !== req.user._id.toString()) {
+        res.status(403);
+        throw new Error('You can only edit your own tasks');
+    }
+
+    // Only allow editing if task is Manager Rejected
+    if (task.status !== STATUS.MANAGER_REJECTED) {
+        res.status(400);
+        throw new Error('You can only edit tasks that have been rejected by manager');
+    }
+
+    const { title, description, deadline, category } = req.body;
+    if (!title || !description || !deadline) {
+        res.status(400);
+        throw new Error('Title, description, and deadline are required');
+    }
+
+    const parsedDeadline = new Date(deadline);
+    if (Number.isNaN(parsedDeadline.getTime())) {
+        res.status(400);
+        throw new Error('Provide a valid deadline');
+    }
+
+    // Update task fields
+    task.title = title;
+    task.description = description;
+    task.deadline = parsedDeadline;
+    task.category = category || 'other';
+
+    // Handle new attachments if provided
+    const newAttachments = (req.files || []).map(file => ({
+        stage: 'client-request',
+        filename: file.filename,
+        originalName: file.originalname,
+        size: file.size,
+        mimeType: file.mimetype,
+        uploadedBy: req.user._id
+    }));
+
+    // Append new attachments to existing ones
+    if (newAttachments.length > 0) {
+        task.attachments = task.attachments.concat(newAttachments);
+    }
+
+    // Reset task status to CLIENT_REQUESTED for re-review
+    setTaskState(task, {
+        status: STATUS.CLIENT_REQUESTED,
+        stage: STAGE.CLIENT_REQUEST,
+        note: 'Client resubmitted task after manager rejection',
+        actor: req.user._id
+    });
+
+    await task.save();
+    await task.populate('createdBy', 'name email role');
+
+    // Notify HR of resubmission
+    await notifyRoles({
+        roles: ['hr'],
+        message: `Task ${task.title} resubmitted by ${req.user.name || req.user.email} after manager rejection`,
+        task: task._id,
+        stage: STAGE.CLIENT_REQUEST
+    });
+
+    if (req.user?.email) {
+        enqueueEmail(() => trySendTaskStageEmail({
+            email: req.user.email,
+            name: req.user.name || req.user.email,
+            roleLabel: 'Client',
+            taskTitle: task.title,
+            message: `Your changes to ${task.title} have been resubmitted for review.`
+        }));
+    }
+
+    res.json(task);
+}));
+
 // Upload stage deliverables and supporting files
 router.post('/tasks/:id/attachments', protect, upload.single('file'), asyncHandler(async (req, res) => {
     if (req.isAdmin) {
@@ -1337,7 +1429,10 @@ router.post('/tasks/:id/attachments', protect, upload.single('file'), asyncHandl
             res.status(403);
             throw new Error('You are not assigned as the tester for this project');
         }
-        if (task.currentStage !== STAGE.TESTING) {
+        // Allow tester to upload if they are assigned and in testing stage or have a valid assignment status
+        const testerAssignment = task.stageAssignments.tester;
+        const validStatuses = ['pending', 'in_progress', 'revisions', 'delayed'];
+        if (task.currentStage !== STAGE.TESTING && !validStatuses.includes(testerAssignment.status)) {
             res.status(400);
             throw new Error('Testing stage is not active');
         }

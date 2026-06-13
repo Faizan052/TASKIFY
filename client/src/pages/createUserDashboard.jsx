@@ -21,6 +21,7 @@ const STATUS = {
 	AWAITING_HR_REVIEW: 'Awaiting HR Review',
 	AWAITING_CLIENT_REVIEW: 'Awaiting Client Review',
 	CHANGES_REQUESTED: 'Changes Requested',
+	MANAGER_REJECTED: 'Manager Rejected',
 	COMPLETED: 'Completed',
 	CANCELLED: 'Cancelled',
 	DELAYED: 'Delayed'
@@ -140,6 +141,9 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 		const notificationsLoadedRef = useRef(false)
 		const [_showNotifications, _setShowNotifications] = useState(false)
 		const { unreadMessages } = useUnreadMessages(10000)
+		const [selectedTaskCategory, setSelectedTaskCategory] = useState('all-tasks')
+		const [editingTask, setEditingTask] = useState(null)
+		const [showEditModal, setShowEditModal] = useState(false)
 
 		const taskList = useMemo(() => (Array.isArray(tasks) ? tasks : []), [tasks])
 		const effectiveRole = role || (profile ? profile.role : '')
@@ -393,6 +397,39 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 			}
 		}, [setError, updateTask])
 
+		const handleManagerRejectedAction = useCallback(async (taskId, action) => {
+			if (action === 'make-changes') {
+				const task = taskList.find(t => t._id === taskId)
+				if (task) {
+					setEditingTask(task)
+					setShowEditModal(true)
+					setActiveView('submit')
+				}
+				return
+			}
+			
+			if (action === 'cancel-project') {
+				const confirmCancel = window.confirm('Are you sure you want to cancel this project?')
+				if (!confirmCancel) return
+			}
+			
+			setMessage('')
+			setError(null)
+			setActingTaskId(taskId)
+			try {
+				const updated = await apiFetch(`/api/user/tasks/${taskId}/status`, { 
+					method: 'PUT', 
+					body: { action } 
+				})
+				updateTask(updated)
+				setMessage(action === 'cancel-project' ? 'Project cancelled' : 'Making changes...')
+			} catch (err) {
+				setError(err.message)
+			} finally {
+				setActingTaskId('')
+			}
+		}, [taskList, setError, updateTask])
+
 		const markNotificationRead = useCallback(async (id) => {
 			try {
 				await apiFetch(`/api/user/notifications/${id}/read`, { method: 'PUT' })
@@ -478,6 +515,11 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 
 		const clientCancelled = useMemo(
 			() => taskList.filter((task) => task.status === STATUS.CANCELLED),
+			[taskList]
+		)
+
+		const clientManagerRejected = useMemo(
+			() => taskList.filter((task) => task.status === STATUS.MANAGER_REJECTED),
 			[taskList]
 		)
 
@@ -694,231 +736,308 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 
 		const renderClientTasks = useCallback(() => (
 			<>
-				<div className="dashboard-section">
-					<div className="dashboard-section-header">
-						<h2 className="dashboard-section-title">All Tasks</h2>
-						<span className="info-badge">{clientAllTasks.length} total</span>
-					</div>
-					{clientAllTasks.length ? (
-						<div className="items-list">
-							{clientAllTasks.map((task, index) => (
-								<div key={task._id} className="item-card task-card">
-									<div className="task-card-head">
-										<div className="task-card-title">
-											<span className="task-index-badge">{formatIndex(index)}</span>
-											<span className="item-title">{task.title}</span>
-										</div>
-										<span className="status-badge">{task.status}</span>
-									</div>
-									<div className="task-meta-grid">
-										<div className="task-meta-item">
-											<span className="task-meta-label">Created</span>
-											<span className="task-meta-value">{formatDate(task.createdAt, true)}</span>
-										</div>
-										<div className="task-meta-item">
-											<span className="task-meta-label">Manager</span>
-											<span className="task-meta-value">{formatPerson(task.manager)}</span>
-										</div>
-									</div>
-									{renderChangeRequests(task)}
-									<details className="task-details" style={{ marginTop: 12 }}>
-										<summary>Attachments</summary>
-										{renderAttachmentList(task)}
-									</details>
-								</div>
-							))}
+				{selectedTaskCategory === 'all-tasks' && (
+					<div className="dashboard-section">
+						<div className="dashboard-section-header">
+							<h2 className="dashboard-section-title">All Tasks</h2>
+							<span className="info-badge">{clientAllTasks.length} total</span>
 						</div>
-					) : <div className="help">No tasks created yet.</div>}
-				</div>
-
-				<div className="dashboard-section">
-					<div className="dashboard-section-header">
-						<h2 className="dashboard-section-title">Submitted Requests</h2>
-						<span className="info-badge">{clientQueued.length} items</span>
-					</div>
-					{clientQueued.length ? (
-						<div className="items-list">
-							{clientQueued.map((task, index) => (
-								<div key={task._id} className="item-card task-card">
-									<div className="task-card-head">
-										<div className="task-card-title">
-											<span className="task-index-badge">{formatIndex(index)}</span>
-											<span className="item-title">{task.title}</span>
-										</div>
-										<span className="status-badge">{task.status}</span>
-									</div>
-									<div className="task-meta-grid">
-										<div className="task-meta-item">
-											<span className="task-meta-label">Requested</span>
-											<span className="task-meta-value">{formatDate(task.createdAt, true)}</span>
-										</div>
-										<div className="task-meta-item">
-											<span className="task-meta-label">Manager</span>
-											<span className="task-meta-value">{formatPerson(task.manager)}</span>
-										</div>
-									</div>
-									{renderChangeRequests(task)}
-									<details className="task-details" style={{ marginTop: 12 }}>
-										<summary>Attachments</summary>
-										{renderAttachmentList(task)}
-									</details>
-								</div>
-							))}
-						</div>
-					) : <div className="help">No pending requests.</div>}
-				</div>
-
-				<div className="dashboard-section">
-					<div className="dashboard-section-header">
-						<h2 className="dashboard-section-title">In Delivery</h2>
-						<span className="info-badge">{clientInDelivery.length} items</span>
-					</div>
-					{clientInDelivery.length ? (
-						<div className="items-list">
-							{clientInDelivery.map((task, index) => (
-								<div key={task._id} className="item-card task-card">
-									<div className="task-card-head">
-										<div className="task-card-title">
-											<span className="task-index-badge">{formatIndex(index)}</span>
-											<span className="item-title">{task.title}</span>
-										</div>
-										<span className="status-badge">{task.status}</span>
-									</div>
-									<div className="task-meta-grid">
-										<div className="task-meta-item">
-											<span className="task-meta-label">Manager</span>
-											<span className="task-meta-value">{formatPerson(task.manager)}</span>
-										</div>
-									</div>
-									<details className="task-details" style={{ marginTop: 12 }}>
-										<summary>Stage progress</summary>
-										{renderStageSnapshot(task)}
-									</details>
-									<details className="task-details" style={{ marginTop: 12 }}>
-										<summary>Attachments</summary>
-										{renderAttachmentList(task)}
-									</details>
-								</div>
-							))}
-						</div>
-					) : <div className="help">No active deliveries right now.</div>}
-				</div>
-
-				<div className="dashboard-section">
-					<div className="dashboard-section-header">
-						<h2 className="dashboard-section-title">Awaiting Your Review</h2>
-						<span className="info-badge">{clientAwaitingReview.length} items</span>
-					</div>
-					{clientAwaitingReview.length ? (
-						<div className="items-list">
-							{clientAwaitingReview.map((task, index) => {
-								const isActing = actingTaskId === task._id
-								const reviewOrigin = task.clientReviewOrigin || 'hr_delivery'
-								const showApprove = reviewOrigin === 'hr_delivery'
-								const showEndRequest = reviewOrigin === 'manager_reject'
-								return (
+						{clientAllTasks.length ? (
+							<div className="items-list">
+								{clientAllTasks.map((task, index) => (
 									<div key={task._id} className="item-card task-card">
 										<div className="task-card-head">
 											<div className="task-card-title">
 												<span className="task-index-badge">{formatIndex(index)}</span>
 												<span className="item-title">{task.title}</span>
 											</div>
-											<span className="status-badge">Awaiting Review</span>
+											<span className="status-badge">{task.status}</span>
 										</div>
 										<div className="task-meta-grid">
 											<div className="task-meta-item">
-												<span className="task-meta-label">Delivered</span>
-												<span className="task-meta-value">{formatDate(task.updatedAt || task.deadline, true)}</span>
+												<span className="task-meta-label">Created</span>
+												<span className="task-meta-value">{formatDate(task.createdAt, true)}</span>
 											</div>
 											<div className="task-meta-item">
 												<span className="task-meta-label">Manager</span>
 												<span className="task-meta-value">{formatPerson(task.manager)}</span>
 											</div>
 										</div>
-										<div style={{ marginTop: 12, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-											{showApprove ? (
-												<button className="btn small" onClick={() => handleClientAction(task._id, 'approve')} disabled={isActing}>{isActing ? 'Processing...' : 'Approve'}</button>
-											) : null}
-											<button className="btn btn-outline small" onClick={() => handleClientAction(task._id, 'request-changes')} disabled={isActing}>{isActing ? 'Processing...' : 'Request changes'}</button>
-											{showEndRequest ? (
-												<button className="btn btn-outline small danger-action" onClick={() => handleClientAction(task._id, 'end-request')} disabled={isActing}>{isActing ? 'Processing...' : 'End request'}</button>
-											) : null}
+										{renderChangeRequests(task)}
+										<details className="task-details" style={{ marginTop: 12 }}>
+											<summary>Attachments</summary>
+											{renderAttachmentList(task)}
+										</details>
+									</div>
+								))}
+							</div>
+						) : <div className="help">No tasks created yet.</div>}
+					</div>
+				)}
+
+				{/* Submitted Requests */}
+				{selectedTaskCategory === 'submitted-requests' && (
+					<div className="dashboard-section">
+						<div className="dashboard-section-header">
+							<h2 className="dashboard-section-title">Submitted Requests</h2>
+							<span className="info-badge">{clientQueued.length} items</span>
+						</div>
+						{clientQueued.length ? (
+							<div className="items-list">
+								{clientQueued.map((task, index) => (
+									<div key={task._id} className="item-card task-card">
+										<div className="task-card-head">
+											<div className="task-card-title">
+												<span className="task-index-badge">{formatIndex(index)}</span>
+												<span className="item-title">{task.title}</span>
+											</div>
+											<span className="status-badge">{task.status}</span>
+										</div>
+										<div className="task-meta-grid">
+											<div className="task-meta-item">
+												<span className="task-meta-label">Requested</span>
+												<span className="task-meta-value">{formatDate(task.createdAt, true)}</span>
+											</div>
+											<div className="task-meta-item">
+												<span className="task-meta-label">Manager</span>
+												<span className="task-meta-value">{formatPerson(task.manager)}</span>
+											</div>
+										</div>
+										{renderChangeRequests(task)}
+										<details className="task-details" style={{ marginTop: 12 }}>
+											<summary>Attachments</summary>
+											{renderAttachmentList(task)}
+										</details>
+									</div>
+								))}
+							</div>
+						) : <div className="help">No pending requests.</div>}
+					</div>
+				)}
+
+				{/* In Delivery */}
+				{selectedTaskCategory === 'in-delivery' && (
+					<div className="dashboard-section">
+						<div className="dashboard-section-header">
+							<h2 className="dashboard-section-title">In Delivery</h2>
+							<span className="info-badge">{clientInDelivery.length} items</span>
+						</div>
+						{clientInDelivery.length ? (
+							<div className="items-list">
+								{clientInDelivery.map((task, index) => (
+									<div key={task._id} className="item-card task-card">
+										<div className="task-card-head">
+											<div className="task-card-title">
+												<span className="task-index-badge">{formatIndex(index)}</span>
+												<span className="item-title">{task.title}</span>
+											</div>
+											<span className="status-badge">{task.status}</span>
+										</div>
+										<div className="task-meta-grid">
+											<div className="task-meta-item">
+												<span className="task-meta-label">Manager</span>
+												<span className="task-meta-value">{formatPerson(task.manager)}</span>
+											</div>
 										</div>
 										<details className="task-details" style={{ marginTop: 12 }}>
 											<summary>Stage progress</summary>
 											{renderStageSnapshot(task)}
 										</details>
 										<details className="task-details" style={{ marginTop: 12 }}>
-											<summary>Deliverables</summary>
+											<summary>Attachments</summary>
 											{renderAttachmentList(task)}
 										</details>
-										{renderChangeRequests(task)}
 									</div>
-								)
-							})}
-						</div>
-					) : <div className="help">No tasks need your approval.</div>}
-				</div>
-
-				<div className="dashboard-section">
-					<div className="dashboard-section-header">
-						<h2 className="dashboard-section-title">Completed Projects</h2>
-						<span className="info-badge">{clientCompleted.length} items</span>
+								))}
+							</div>
+						) : <div className="help">No active deliveries right now.</div>}
 					</div>
-					{clientCompleted.length ? (
-						<div className="table-container">
-							<table className="data-table">
-								<thead>
-									<tr>
-										<th>Title</th>
-										<th>Completed</th>
-										<th>Manager</th>
-									</tr>
-								</thead>
-								<tbody>
-									{clientCompleted.map((task) => (
-										<tr key={task._id}>
-											<td>{task.title}</td>
-											<td>{formatDate(task.updatedAt || task.deadline, true)}</td>
-											<td>{formatPerson(task.manager)}</td>
-										</tr>
-									))}
-								</tbody>
-							</table>
-						</div>
-					) : <div className="help">No completed projects yet.</div>}
-				</div>
+				)}
 
-				<div className="dashboard-section">
-					<div className="dashboard-section-header">
-						<h2 className="dashboard-section-title">Cancelled Requests</h2>
-						<span className="info-badge">{clientCancelled.length} items</span>
-					</div>
-					{clientCancelled.length ? (
-						<div className="table-container">
-							<table className="data-table">
-								<thead>
-									<tr>
-										<th>Title</th>
-										<th>Cancelled</th>
-										<th>Manager</th>
-									</tr>
-								</thead>
-								<tbody>
-									{clientCancelled.map((task) => (
-										<tr key={task._id}>
-											<td>{task.title}</td>
-											<td>{formatDate(task.updatedAt || task.deadline, true)}</td>
-											<td>{formatPerson(task.manager)}</td>
-										</tr>
-									))}
-								</tbody>
-							</table>
+				{/* Awaiting Your Review */}
+				{selectedTaskCategory === 'awaiting-review' && (
+					<div className="dashboard-section">
+						<div className="dashboard-section-header">
+							<h2 className="dashboard-section-title">Awaiting Your Review</h2>
+							<span className="info-badge">{clientAwaitingReview.length} items</span>
 						</div>
-					) : <div className="help">No cancelled requests yet.</div>}
-				</div>
+						{clientAwaitingReview.length ? (
+							<div className="items-list">
+								{clientAwaitingReview.map((task, index) => {
+									const isActing = actingTaskId === task._id
+									const reviewOrigin = task.clientReviewOrigin || 'hr_delivery'
+									const showApprove = reviewOrigin === 'hr_delivery'
+									const showEndRequest = reviewOrigin === 'manager_reject'
+									return (
+										<div key={task._id} className="item-card task-card">
+											<div className="task-card-head">
+												<div className="task-card-title">
+													<span className="task-index-badge">{formatIndex(index)}</span>
+													<span className="item-title">{task.title}</span>
+												</div>
+												<span className="status-badge">Awaiting Review</span>
+											</div>
+											<div className="task-meta-grid">
+												<div className="task-meta-item">
+													<span className="task-meta-label">Delivered</span>
+													<span className="task-meta-value">{formatDate(task.updatedAt || task.deadline, true)}</span>
+												</div>
+												<div className="task-meta-item">
+													<span className="task-meta-label">Manager</span>
+													<span className="task-meta-value">{formatPerson(task.manager)}</span>
+												</div>
+											</div>
+											<div style={{ marginTop: 12, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+												{showApprove ? (
+													<button className="btn small" onClick={() => handleClientAction(task._id, 'approve')} disabled={isActing}>{isActing ? 'Processing...' : 'Approve'}</button>
+												) : null}
+												<button className="btn btn-outline small" onClick={() => handleClientAction(task._id, 'request-changes')} disabled={isActing}>{isActing ? 'Processing...' : 'Request changes'}</button>
+												{showEndRequest ? (
+													<button className="btn btn-outline small danger-action" onClick={() => handleClientAction(task._id, 'end-request')} disabled={isActing}>{isActing ? 'Processing...' : 'End request'}</button>
+												) : null}
+											</div>
+											<details className="task-details" style={{ marginTop: 12 }}>
+												<summary>Stage progress</summary>
+												{renderStageSnapshot(task)}
+											</details>
+											<details className="task-details" style={{ marginTop: 12 }}>
+												<summary>Deliverables</summary>
+												{renderAttachmentList(task)}
+											</details>
+											{renderChangeRequests(task)}
+										</div>
+									)
+								})}
+							</div>
+						) : <div className="help">No tasks need your approval.</div>}
+					</div>
+				)}
+
+				{/* Completed Projects */}
+				{selectedTaskCategory === 'completed' && (
+					<div className="dashboard-section">
+						<div className="dashboard-section-header">
+							<h2 className="dashboard-section-title">Completed Projects</h2>
+							<span className="info-badge">{clientCompleted.length} items</span>
+						</div>
+						{clientCompleted.length ? (
+							<div className="table-container">
+								<table className="data-table">
+									<thead>
+										<tr>
+											<th>Title</th>
+											<th>Completed</th>
+											<th>Manager</th>
+										</tr>
+									</thead>
+									<tbody>
+										{clientCompleted.map((task) => (
+											<tr key={task._id}>
+												<td>{task.title}</td>
+												<td>{formatDate(task.updatedAt || task.deadline, true)}</td>
+												<td>{formatPerson(task.manager)}</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						) : <div className="help">No completed projects yet.</div>}
+					</div>
+				)}
+
+				{/* Manager Rejected */}
+				{selectedTaskCategory === 'manager-rejected' && (
+					<div className="dashboard-section">
+						<div className="dashboard-section-header">
+							<h2 className="dashboard-section-title">Manager Rejected</h2>
+							<span className="info-badge">{clientManagerRejected.length} items</span>
+						</div>
+						{clientManagerRejected.length ? (
+							<div className="items-list">
+								{clientManagerRejected.map((task, index) => {
+									const isActing = actingTaskId === task._id
+									return (
+										<div key={task._id} className="item-card task-card">
+											<div className="task-card-head">
+												<div className="task-card-title">
+													<span className="task-index-badge">{formatIndex(index)}</span>
+													<span className="item-title">{task.title}</span>
+												</div>
+												<span className="status-badge" style={{ background: '#fee2e2', color: '#991b1b' }}>Rejected by Manager</span>
+											</div>
+											<div className="task-meta-grid">
+												<div className="task-meta-item">
+													<span className="task-meta-label">Rejected Date</span>
+													<span className="task-meta-value">{formatDate(task.updatedAt || task.deadline, true)}</span>
+												</div>
+												<div className="task-meta-item">
+													<span className="task-meta-label">Manager</span>
+													<span className="task-meta-value">{formatPerson(task.manager)}</span>
+												</div>
+											</div>
+											<div style={{ marginTop: 12, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+												<button 
+													className="btn small" 
+													onClick={() => handleManagerRejectedAction(task._id, 'make-changes')} 
+													disabled={isActing}
+													style={{ background: '#3b82f6', color: '#fff' }}
+												>
+													{isActing ? 'Processing...' : '✏️ Make Changes'}
+												</button>
+												<button 
+													className="btn btn-outline small danger-action" 
+													onClick={() => handleManagerRejectedAction(task._id, 'cancel-project')} 
+													disabled={isActing}
+												>
+													{isActing ? 'Processing...' : '❌ Cancel Project'}
+												</button>
+											</div>
+											{renderChangeRequests(task)}
+											<details className="task-details" style={{ marginTop: 12 }}>
+												<summary>Attachments</summary>
+												{renderAttachmentList(task)}
+											</details>
+										</div>
+									)
+								})}
+							</div>
+						) : <div className="help">No rejected projects.</div>}
+					</div>
+				)}
+
+				{/* Cancelled Requests */}
+				{selectedTaskCategory === 'cancelled' && (
+					<div className="dashboard-section">
+						<div className="dashboard-section-header">
+							<h2 className="dashboard-section-title">Cancelled Requests</h2>
+							<span className="info-badge">{clientCancelled.length} items</span>
+						</div>
+						{clientCancelled.length ? (
+							<div className="table-container">
+								<table className="data-table">
+									<thead>
+										<tr>
+											<th>Title</th>
+											<th>Cancelled</th>
+											<th>Manager</th>
+										</tr>
+									</thead>
+									<tbody>
+										{clientCancelled.map((task) => (
+											<tr key={task._id}>
+												<td>{task.title}</td>
+												<td>{formatDate(task.updatedAt || task.deadline, true)}</td>
+												<td>{formatPerson(task.manager)}</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						) : <div className="help">No cancelled requests yet.</div>}
+					</div>
+				)}
 			</>
-		), [actingTaskId, clientAllTasks, clientAwaitingReview, clientCancelled, clientCompleted, clientInDelivery, clientQueued, handleClientAction, renderAttachmentList, renderChangeRequests, renderStageSnapshot])
+		), [actingTaskId, clientAllTasks, clientAwaitingReview, clientCancelled, clientCompleted, clientInDelivery, clientManagerRejected, clientQueued, handleClientAction, handleManagerRejectedAction, renderAttachmentList, renderChangeRequests, renderStageSnapshot, selectedTaskCategory])
 
 		const renderRoleAssignments = useCallback(() => (
 			<>
@@ -941,6 +1060,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 
 			const [activeView, setActiveView] = React.useState('overview')
 		const [showViewDropdown, setShowViewDropdown] = useState(false)
+		const [showTasksDropdown, setShowTasksDropdown] = useState(false)
 		const [showProfileMenu, setShowProfileMenu] = useState(false)
 		const headerRef = useRef(null)
 
@@ -948,6 +1068,7 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 			const handleClickOutside = (e) => {
 				if (headerRef.current && !headerRef.current.contains(e.target)) {
 					setShowViewDropdown(false)
+					setShowTasksDropdown(false)
 				}
 			}
 			document.addEventListener('click', handleClickOutside)
@@ -974,13 +1095,58 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 								<span>Dashboard</span>
 							</button>
 
-							<button 
-								className={`admin-nav-btn ${activeView === 'tasks' ? 'active' : ''}`}
-								onClick={() => setActiveView('tasks')}
-							>
-								<span className="nav-icon">✓</span>
-								<span>My Tasks</span>
-							</button>
+							{effectiveRole === 'client' ? (
+								<div className="admin-nav-dropdown" onMouseEnter={() => setShowTasksDropdown(true)} onMouseLeave={() => setShowTasksDropdown(false)}>
+									<button 
+										className={`admin-nav-btn ${activeView === 'tasks' ? 'active' : ''}`}
+										onClick={() => setActiveView('tasks')}
+									>
+										<span className="nav-icon">✓</span>
+										<span>My Tasks</span>
+										<span className="dropdown-arrow">▼</span>
+									</button>
+									{showTasksDropdown && (
+										<div className="admin-dropdown-menu">
+											<button className="dropdown-item" onClick={() => { setActiveView('tasks'); setSelectedTaskCategory('all-tasks'); setShowTasksDropdown(false); }}>
+												<span className="dropdown-icon">📋</span>
+												All Tasks
+											</button>
+											<button className="dropdown-item" onClick={() => { setActiveView('tasks'); setSelectedTaskCategory('submitted-requests'); setShowTasksDropdown(false); }}>
+												<span className="dropdown-icon">📤</span>
+												Submitted Requests
+											</button>
+											<button className="dropdown-item" onClick={() => { setActiveView('tasks'); setSelectedTaskCategory('in-delivery'); setShowTasksDropdown(false); }}>
+												<span className="dropdown-icon">🚚</span>
+												In Delivery
+											</button>
+											<button className="dropdown-item" onClick={() => { setActiveView('tasks'); setSelectedTaskCategory('awaiting-review'); setShowTasksDropdown(false); }}>
+												<span className="dropdown-icon">👀</span>
+												Awaiting Your Review
+											</button>
+											<button className="dropdown-item" onClick={() => { setActiveView('tasks'); setSelectedTaskCategory('manager-rejected'); setShowTasksDropdown(false); }}>
+												<span className="dropdown-icon">⚠️</span>
+												Manager Rejected
+											</button>
+											<button className="dropdown-item" onClick={() => { setActiveView('tasks'); setSelectedTaskCategory('completed'); setShowTasksDropdown(false); }}>
+												<span className="dropdown-icon">✅</span>
+												Completed Projects
+											</button>
+											<button className="dropdown-item" onClick={() => { setActiveView('tasks'); setSelectedTaskCategory('cancelled'); setShowTasksDropdown(false); }}>
+												<span className="dropdown-icon">❌</span>
+												Cancelled Requests
+											</button>
+										</div>
+									)}
+								</div>
+							) : (
+								<button 
+									className={`admin-nav-btn ${activeView === 'tasks' ? 'active' : ''}`}
+									onClick={() => setActiveView('tasks')}
+								>
+									<span className="nav-icon">✓</span>
+									<span>My Tasks</span>
+								</button>
+							)}
 
 							{allowTaskRequest && (
 								<button 
@@ -1454,15 +1620,44 @@ export const createUserDashboard = ({ heading, role, allowTaskRequest = false })
 
 						{activeView === 'submit' && allowTaskRequest ? (
 							<div className="dashboard-section" style={{ padding: '32px', background: 'transparent' }}>
-								<SubmitRequestForm 
-									onSuccess={() => {
-										setMessage('Request submitted successfully!')
-										setActiveView('tasks')
-										refresh()
+							{editingTask && (
+								<button 
+									onClick={() => { setEditingTask(null); setShowEditModal(false); setActiveView('tasks'); setSelectedTaskCategory('manager-rejected'); }}
+									style={{ 
+										marginBottom: '16px', 
+										padding: '8px 16px', 
+										background: '#e5e7eb', 
+										border: 'none',
+										borderRadius: '8px',
+										cursor: 'pointer',
+										fontSize: '14px',
+										fontWeight: 600
 									}}
-								/>
-							</div>
-						) : null}
+								>
+									← Back to Manager Rejected
+								</button>
+							)}
+							<SubmitRequestForm 
+								editingTask={editingTask}
+								onSuccess={() => {
+									setMessage(editingTask ? 'Changes submitted successfully!' : 'Request submitted successfully!')
+									setEditingTask(null)
+									setShowEditModal(false)
+									setActiveView('tasks')
+									if (editingTask) {
+										setSelectedTaskCategory('submitted-requests')
+									}
+									refresh()
+								}}
+								onCancel={() => {
+									setEditingTask(null)
+									setShowEditModal(false)
+									setActiveView('tasks')
+									setSelectedTaskCategory('manager-rejected')
+								}}
+							/>
+						</div>
+					) : null}
 
 						{activeView === 'notifications' ? (
 							<div className="dashboard-section">

@@ -451,7 +451,7 @@ router.put('/tasks/:id/decision', protect, roleRequired('manager'), asyncHandler
         task.assignedTeam = null;
         task.clientReviewOrigin = 'manager_reject';
         setTaskState(task, {
-            status: STATUS.AWAITING_CLIENT_REVIEW,
+            status: STATUS.MANAGER_REJECTED,
             stage: STAGE.CLIENT_REVIEW,
             note: `Manager rejected task: ${decisionComment}`,
             actor: req.user._id
