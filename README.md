@@ -230,3 +230,49 @@ BS Software Engineering
 **TASKIFY – Smart Project Request & Completion Workflow System (PRCWS)**
 
 *"Transforming project requests into successful deliveries through structured workflow automation."*
+
+
+## TASKIFY IMAGES
+
+### System Mockups
+
+<table>
+  <tr>
+    <td align="center"><strong>Home Page</strong></td>
+    <td align="center"><strong>Login Page</strong></td>
+  </tr>
+  <tr>
+    <td><img src="TASKIFY%20IMAGES/MOCKUPS/HOME.png" width="400" alt="Home Page"></td>
+    <td><img src="TASKIFY%20IMAGES/MOCKUPS/LOGIN.png" width="400" alt="Login Page"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Registration Page</strong></td>
+    <td align="center"><strong>Admin Dashboard</strong></td>
+  </tr>
+  <tr>
+    <td><img src="TASKIFY%20IMAGES/MOCKUPS/REGISTER.png" width="400" alt="Registration Page"></td>
+    <td><img src="TASKIFY%20IMAGES/MOCKUPS/ADMIN.png" width="400" alt="Admin Dashboard"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>HR Dashboard</strong></td>
+    <td align="center"><strong>Manager Dashboard</strong></td>
+  </tr>
+  <tr>
+    <td><img src="TASKIFY%20IMAGES/MOCKUPS/HR.png" width="400" alt="HR Dashboard"></td>
+    <td><img src="TASKIFY%20IMAGES/MOCKUPS/MANAGER.png" width="400" alt="Manager Dashboard"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Client Dashboard</strong></td>
+    <td align="center"><strong>Team Dashboard</strong></td>
+  </tr>
+  <tr>
+    <td><img src="TASKIFY%20IMAGES/MOCKUPS/CLIENT.png" width="400" alt="Client Dashboard"></td>
+    <td><img src="TASKIFY%20IMAGES/MOCKUPS/TEAM.png" width="400" alt="Team Dashboard"></td>
+  </tr>
+</table>
+
+## TASKIFY PROJECT DEMO
+
+[▶ Watch or Download Taskify Video](Taskify%20VIDEO.mp4)
+
+
