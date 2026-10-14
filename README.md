@@ -271,8 +271,8 @@ BS Software Engineering
   </tr>
 </table>
 
-## TASKIFY PROJECT DEMO
 
-[▶ Watch or Download Taskify Video]([Taskify%20VIDEO.mp4](https://drive.google.com/file/d/1-pbD6RdLBQhVjQuVw7oo-DxvB6PhZekN/view?usp=drive_link))
+## TASKIFY PROJECT DEMO
+[▶ Watch Taskify Project Demo](https://drive.google.com/file/d/1-pbD6RdLBQhVjQuVw7oo-DxvB6PhZekN/view?usp=drive_link)
 
 
